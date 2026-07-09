@@ -219,3 +219,7 @@ __marimo__/
 
 
 data/raw/*
+
+MC3_graph.json
+MC3_schema.json 
+MC3_data_description.pdf
