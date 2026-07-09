@@ -1,0 +1,73 @@
+type,label,name,sub_type,id,degree
+Entity,Sam,Sam,Person,Sam,17
+Entity,Kelly,Kelly,Person,Kelly,5
+Entity,Nadia Conti,Nadia Conti,Person,Nadia Conti,37
+Entity,Elise,Elise,Person,Elise,16
+Entity,Liam Thorne,Liam Thorne,Person,Liam Thorne,43
+Entity,Samantha Blake,Samantha Blake,Person,Samantha Blake,22
+Entity,Davis,Davis,Person,Davis,64
+Entity,Rodriguez,Rodriguez,Person,Rodriguez,34
+Entity,Sailor Shift,Sailor Shift,Person,Sailor Shift,1
+Entity,Clepper Jensen,Clepper Jensen,Person,Clepper Jensen,46
+Entity,Miranda Jordan,Miranda Jordan,Person,Miranda Jordan,50
+Entity,The Intern,The Intern,Person,The Intern,55
+Entity,The Lookout,The Lookout,Person,The Lookout,53
+Entity,The Accountant,The Accountant,Person,The Accountant,11
+Entity,Mrs. Money,Mrs. Money,Person,Mrs. Money,57
+Entity,The Middleman,The Middleman,Person,The Middleman,26
+Entity,Boss,Boss,Person,Boss,45
+Entity,Small Fry,Small Fry,Person,Small Fry,18
+Entity,Glitters Team,Glitters Team,Organization,Glitters Team,10
+Entity,Oceanus City Council,Oceanus City Council,Organization,Oceanus City Council,130
+Entity,Green Guardians,Green Guardians,Organization,Green Guardians,127
+Entity,V. Miesel Shipping,V. Miesel Shipping,Organization,V. Miesel Shipping,67
+Entity,Sailor Shifts Team,Sailor Shifts Team,Organization,Sailor Shifts Team,21
+Entity,Neptune,Neptune,Vessel,Neptune,102
+Entity,Marlin,Marlin,Vessel,Marlin,25
+Entity,Serenity,Serenity,Vessel,Serenity,26
+Entity,Mako,Mako,Vessel,Mako,167
+Entity,Reef Guardian,Reef Guardian,Vessel,Reef Guardian,110
+Entity,Horizon,Horizon,Vessel,Horizon,64
+Entity,Seawatch,Seawatch,Vessel,Seawatch,28
+Entity,EcoVigil,EcoVigil,Vessel,EcoVigil,72
+Entity,Sentinel,Sentinel,Vessel,Sentinel,83
+Entity,Osprey,Osprey,Vessel,Osprey,18
+Entity,Defender,Defender,Vessel,Defender,15
+Entity,Northern Light,Northern Light,Vessel,Northern Light,13
+Entity,Remora,Remora,Vessel,Remora,122
+Entity,Knowles,Knowles,Vessel,Knowles,18
+Entity,Mariner's Dream,Mariner's Dream,Vessel,Mariner's Dream,5
+Entity,Recreational Fishing Boats,Recreational Fishing Boats,Group,Recreational Fishing Boats,4
+Entity,City Officials,City Officials,Group,City Officials,3
+Entity,Diving Tour Operators,Diving Tour Operators,Group,Diving Tour Operators,1
+Entity,Tourists,Tourists,Group,Tourists,2
+Entity,Conservation Vessels,Conservation Vessels,Group,Conservation Vessels,5
+Entity,Paackland Harbor,Paackland Harbor,Location,Paackland Harbor,51
+Entity,Haacklee Harbor,Haacklee Harbor,Location,Haacklee Harbor,16
+Entity,Himark Harbor,Himark Harbor,Location,Himark Harbor,69
+Entity,Nemo Reef,Nemo Reef,Location,Nemo Reef,102
+Entity,Restricted areas,Restricted areas,Location,Restricted areas,9
+Entity,Azure Cove,Azure Cove,Location,Azure Cove,1
+Entity,Protected areas,Protected areas,Location,Protected areas,20
+Entity,Eastern reefs,Eastern reefs,Location,Eastern reefs,6
+Entity,Eastern Coastline,Eastern Coastline,Location,Eastern Coastline,1
+Entity,Southern islands,Southern islands,Location,Southern islands,2
+Entity,Southern coastline,Southern coastline,Location,Southern coastline,2
+Entity,Coral Point,Coral Point,Location,Coral Point,3
+Entity,Dolphin Bay,Dolphin Bay,Location,Dolphin Bay,5
+Entity,E7,E7,Location,E7,3
+Entity,Northern quadrant,Northern quadrant,Location,Northern quadrant,6
+Entity,Southern quadrant,Southern quadrant,Location,Southern quadrant,1
+Entity,Eastern quadrant,Eastern quadrant,Location,Eastern quadrant,4
+Entity,Western quadrant,Western quadrant,Location,Western quadrant,6
+Entity,Eastern Islands,Eastern Islands,Location,Eastern Islands,2
+Entity,Western Boundary,Western Boundary,Location,Western Boundary,5
+Entity,Eastern Boundary,Eastern Boundary,Location,Eastern Boundary,5
+Entity,Southern Boundary,Southern Boundary,Location,Southern Boundary,2
+Entity,Eastern Shoals,Eastern Shoals,Location,Eastern Shoals,2
+Entity,Restricted Zone,Restricted Zone,Location,Restricted Zone,10
+Entity,Route C,Route C,Location,Route C,3
+Entity,South Dock,South Dock,Location,South Dock,9
+Entity,Castaway Cove,Castaway Cove,Location,Castaway Cove,2
+Entity,Berth 14,Berth 14,Location,Berth 14,2
+Entity,Port Security,Port Security,Location,Port Security,3
