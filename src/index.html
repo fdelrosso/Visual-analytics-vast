@@ -1,0 +1,2529 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VAST MC3 - Dashboard Investigativa</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vue.js 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- D3.js Core -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- D3.js Sankey Plugin -->
+    <script src="https://unpkg.com/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+    <!-- D3.js Cloud Plugin -->
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- DATASET REALE VAST MC3 (window.VAST_DATA) -->
+    <script src="data.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Stili Grafici D3.js */
+        .msg-group rect { transition: stroke 0.2s, opacity 0.3s; }
+        .agg-cell { transition: fill 0.3s, opacity 0.3s; }
+        .sankey-node rect { stroke: #334155; stroke-width: 1px; }
+        .sankey-link { fill: none; stroke-opacity: 0.4; transition: stroke-opacity 0.5s, stroke 0.5s; }
+        .sankey-link:hover { stroke-opacity: 0.7 !important; }
+
+        .ego-node { stroke: #fff; stroke-width: 2px; transition: all 0.5s; }
+        .ego-link { stroke: #10b981; stroke-opacity: 0.6; transition: stroke-opacity 0.5s; }
+        .ego-link.inferred { stroke-dasharray: 4,4; stroke: #f59e0b; stroke-opacity: 0.8; }
+
+        /* Tooltip Globale */
+        .d3-tooltip {
+            position: absolute; text-align: left; padding: 10px 14px;
+            font-size: 12px; background: #ffffff; color: #1e293b;
+            border-radius: 6px; pointer-events: none; opacity: 0;
+            z-index: 100; font-family: 'Inter', sans-serif;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+            border: 1px solid #cbd5e1;
+        }
+
+        /* Stile Navigazione Tab */
+        .tab-btn { transition: all 0.2s; }
+        .tab-btn.active { border-bottom: 3px solid #2563eb; color: #2563eb; background-color: #eff6ff; font-weight: 600; }
+    </style>
+</head>
+<body class="h-screen overflow-hidden text-slate-800 flex flex-col">
+
+    <div id="app" class="flex flex-col w-full h-full relative">
+        <div id="tooltip" class="d3-tooltip"></div>
+
+        <!-- HEADER GLOBALE & TABS -->
+        <header class="bg-white border-b border-slate-200 px-6 pt-4 flex justify-between items-end z-20 shadow-sm shrink-0">
+            <!-- Tabs -->
+            <div class="flex gap-2">
+                <button v-for="tab in tabs" :key="tab.id"
+                        @click="changeTab(tab.id)"
+                        class="tab-btn px-6 py-3 rounded-t-lg text-sm font-medium text-slate-600 flex items-center gap-2 hover:bg-slate-100"
+                        :class="{'active': activeTab === tab.id}">
+                    <i :class="['fa-solid', tab.icon]"></i> {{ tab.name }}
+                </button>
+            </div>
+
+            <!-- Logo/Title -->
+            <div class="pb-3 flex items-center gap-3">
+                <h1 class="text-xl font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-network-wired text-blue-600"></i> Oceanus OSINT
+                </h1>
+                <span class="text-xs text-slate-400 border-l border-slate-300 pl-3">Visual Analysis Platform</span>
+            </div>
+        </header>
+
+        <!-- AREA CONTENUTI -->
+        <main class="flex-1 flex flex-col h-full bg-slate-50 relative w-full overflow-hidden p-6">
+
+            <!-- TAB 1: Pattern Temporali (Heatmap/Aggregata) -->
+            <div v-if="activeTab === 1" class="w-full h-full bg-white rounded-xl shadow border border-slate-200 flex flex-col">
+                <div class="p-3 px-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl shrink-0">
+                    <div class="flex items-center gap-3">
+                        <h2 class="font-semibold text-slate-700">Pattern di Comunicazione Giornalieri — Ottobre 2040</h2>
+                        <span class="px-2 py-1 rounded text-xs font-semibold" :class="filters.isAggregated ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'">
+                            {{ filters.isAggregated ? 'Vista Panoramica' : 'Vista Dettaglio' }}
+                        </span>
+                    </div>
+
+                    <!-- Bottone Aggrega/Scorpora -->
+                    <button @click="toggleAggregation"
+                            class="px-4 py-2 text-sm font-medium rounded-lg border transition-colors shadow-sm flex items-center gap-2 focus:outline-none"
+                            :class="filters.isAggregated ? 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'">
+                        <i class="fa-solid" :class="filters.isAggregated ? 'fa-table-cells-large' : 'fa-layer-group'"></i>
+                        {{ filters.isAggregated ? 'Mostra Singoli Messaggi' : 'Aggrega Conversazioni' }}
+                    </button>
+                </div>
+                <div class="flex-1 flex min-h-0">
+                    <!-- Colonna grafico + legenda tipi -->
+                    <div class="flex-1 flex flex-col min-h-0">
+                        <div id="chart-heatmap" class="flex-1 p-4 min-h-0"></div>
+                        <!-- Legenda TIPI (HTML, non tagliata) -->
+                        <div class="shrink-0 px-4 py-2 border-t border-slate-100 flex items-center gap-4 flex-wrap text-xs text-slate-600">
+                            <span class="font-semibold text-slate-500 uppercase tracking-wide text-[10px]">Tipo utente:</span>
+                            <span v-for="(s, t) in typeStyles" :key="t" class="flex items-center gap-1.5">
+                                <span class="w-3 h-3 rounded" :style="{ backgroundColor: s.color }"></span>{{ s.label }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Colonna destra: Utenti + Topic -->
+                    <aside class="w-60 shrink-0 border-l border-slate-100 flex flex-col min-h-0 bg-slate-50/50 overflow-y-auto">
+                        <!-- Utenti (menu a tendina) -->
+                        <div class="p-3 border-b border-slate-100 shrink-0">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Utenti</span>
+                                <button v-if="filters.selectedUsers.length" @click="filters.selectedUsers = []"
+                                        class="text-xs text-blue-600 hover:underline">Azzera</button>
+                            </div>
+                            <!-- Trigger del menu -->
+                            <button @click="usersOpen = !usersOpen"
+                                    class="mt-2 w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border bg-white shadow-sm transition-colors"
+                                    :class="filters.selectedUsers.length ? 'border-blue-300 ring-1 ring-blue-200' : 'border-slate-300 hover:bg-slate-50'">
+                                <span class="flex items-center gap-2 min-w-0">
+                                    <i class="fa-solid fa-users text-xs" :class="filters.selectedUsers.length ? 'text-blue-500' : 'text-slate-400'"></i>
+                                    <span class="text-xs font-medium truncate" :class="filters.selectedUsers.length ? 'text-slate-800' : 'text-slate-500'">
+                                        {{ filters.selectedUsers.length ? filters.selectedUsers.length + ' selezionati' : 'Filtra utenti (' + participants.length + ')' }}
+                                    </span>
+                                </span>
+                                <i class="fa-solid fa-chevron-down text-xs text-slate-400 transition-transform" :class="{ 'rotate-180': usersOpen }"></i>
+                            </button>
+                            <!-- Pannello lista (visibile solo al clic) -->
+                            <div v-if="usersOpen" class="mt-1 border border-slate-200 rounded-lg bg-white shadow-md overflow-y-auto" style="max-height: 220px">
+                                <button v-for="u in participants" :key="u.id" @click="toggleUser(u.id)"
+                                        class="w-full flex items-center gap-2 px-2 py-1.5 text-left transition-colors border-b border-slate-50 last:border-0"
+                                        :class="isUserSelected(u.id) ? 'bg-blue-100' : 'hover:bg-slate-50'">
+                                    <span class="w-3 h-3 rounded-full shrink-0" :style="{ backgroundColor: typeColorOf(u.type) }"></span>
+                                    <span class="flex-1 min-w-0 truncate text-xs font-medium text-slate-700" :title="u.name + ' · ' + u.type">{{ u.name }}</span>
+                                    <span class="text-xs font-semibold text-slate-400 tabular-nums">{{ u.count }}</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Topic Analysis (NMF) — menu a tendina "Seleziona Topic" -->
+                        <div class="p-3 shrink-0">
+                            <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Topic Analysis</span>
+                            <!-- Trigger del menu -->
+                            <button @click="topicOpen = !topicOpen"
+                                    class="mt-2 w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border bg-white shadow-sm transition-colors"
+                                    :class="filters.selectedTopic !== null ? 'border-amber-300 ring-1 ring-amber-200' : 'border-slate-300 hover:bg-slate-50'">
+                                <span class="flex items-center gap-2 min-w-0">
+                                    <i class="fa-solid fa-tag text-xs" :class="filters.selectedTopic !== null ? 'text-amber-500' : 'text-slate-400'"></i>
+                                    <span class="text-xs font-medium truncate" :class="filters.selectedTopic !== null ? 'text-slate-800' : 'text-slate-500'">
+                                        {{ filters.selectedTopic !== null ? topicById(filters.selectedTopic).label : 'Seleziona Topic' }}
+                                    </span>
+                                </span>
+                                <i class="fa-solid fa-chevron-down text-xs text-slate-400 transition-transform" :class="{ 'rotate-180': topicOpen }"></i>
+                            </button>
+
+                            <!-- Pannello opzioni (visibile solo al clic) -->
+                            <div v-if="topicOpen" class="mt-1 border border-slate-200 rounded-lg bg-white shadow-md overflow-hidden">
+                                <button @click="filters.selectedTopic = null; topicOpen = false"
+                                        class="w-full text-left px-3 py-2 text-xs text-slate-500 hover:bg-slate-50 border-b border-slate-100">
+                                    <i class="fa-solid fa-xmark mr-1.5"></i> Nessun topic
+                                </button>
+                                <button v-for="t in topics" :key="t.id" @click="selectTopic(t.id)"
+                                        class="w-full text-left px-3 py-2 transition-colors hover:bg-amber-50"
+                                        :class="filters.selectedTopic === t.id ? 'bg-amber-50' : ''">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-xs font-semibold text-slate-700">{{ t.label }}</span>
+                                        <span class="text-xs font-semibold text-slate-400 tabular-nums">{{ t.count }}</span>
+                                    </div>
+                                    <div class="text-[10px] text-slate-400 truncate">{{ t.keywords.slice(0,4).join(', ') }}</div>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Chi influenza chi (Task 1c: precedenza temporale) -->
+                        <div class="p-3 border-t border-slate-100 shrink-0">
+                            <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Chi influenza chi</span>
+                            <p class="text-[10px] text-slate-400 mt-0.5 leading-tight">Chi scrive al target poco prima che reagisca, e chi reagisce a lui. Clic su una riga → la catena di messaggi.</p>
+                            <select v-model="influenceTarget" class="mt-2 w-full text-xs border border-slate-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-300">
+                                <option :value="null">Scegli un'entità…</option>
+                                <option v-for="u in participants" :key="'inf'+u.id" :value="u.id">{{ u.name }}</option>
+                            </select>
+                            <label class="flex items-center gap-2 mt-2 text-[10px] text-slate-500">
+                                Finestra <b class="text-slate-700 tabular-nums">{{ influenceDelta }}′</b>
+                                <input type="range" min="15" max="180" step="15" v-model.number="influenceDelta" class="flex-1 accent-blue-500">
+                            </label>
+
+                            <template v-if="influenceTarget">
+                                <div class="mt-3">
+                                    <div class="text-[10px] font-semibold text-slate-500 uppercase flex items-center gap-1"><i class="fa-solid fa-arrow-down-long text-blue-400"></i> Lo precedono <span class="normal-case text-slate-400">(possibili mandanti)</span></div>
+                                    <div v-if="!influenceData.incoming.length" class="text-[10px] text-slate-400 py-1 italic">Nessuno entro Δ.</div>
+                                    <div v-for="r in influenceData.incoming.slice(0,6)" :key="'i'+r.name">
+                                        <button @click="influenceOpen = influenceOpen==='i'+r.name ? null : 'i'+r.name" class="w-full mt-1.5 text-left group">
+                                            <div class="flex items-center gap-1.5 text-[11px]">
+                                                <span class="flex-1 truncate font-medium" :style="{ color: typeColorOf(entityTypeOf(r.name)) }">{{ r.name }}</span>
+                                                <span class="tabular-nums text-slate-400">{{ r.count }}</span>
+                                            </div>
+                                            <div class="h-1.5 rounded mt-0.5 bg-blue-400 group-hover:bg-blue-500 transition-colors" :style="{ width: (100*r.count/influenceData.maxInc)+'%' }"></div>
+                                        </button>
+                                        <div v-if="influenceOpen==='i'+r.name" class="mt-1 mb-1 pl-2 border-l-2 border-blue-200 space-y-1.5">
+                                            <div v-for="(ch,i) in r.chains.slice(0,5)" :key="i" class="text-[10px] leading-tight">
+                                                <button @click="highlightOnMap(ch.trigger.id)" class="block w-full text-left rounded px-1 hover:bg-red-50 text-slate-600" :class="{'bg-red-100 ring-1 ring-red-300': highlightMsgId===ch.trigger.id}" title="Evidenzia sulla mappa"><b>{{ shortTime(ch.trigger.timestamp) }}</b> {{ ch.trigger.from }}→{{ ch.trigger.to }}: «{{ shortText(ch.trigger.content) }}»</button>
+                                                <button @click="highlightOnMap(ch.response.id)" class="block w-full text-left rounded px-1 pl-2 hover:bg-red-50 text-slate-400" :class="{'bg-red-100 ring-1 ring-red-300': highlightMsgId===ch.response.id}" title="Evidenzia sulla mappa">↳ <b>{{ shortTime(ch.response.timestamp) }}</b> {{ ch.response.from }}→{{ ch.response.to }}: «{{ shortText(ch.response.content) }}»</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <div class="text-[10px] font-semibold text-slate-500 uppercase flex items-center gap-1"><i class="fa-solid fa-arrow-up-long text-emerald-400"></i> Reagiscono a lui</div>
+                                    <div v-if="!influenceData.outgoing.length" class="text-[10px] text-slate-400 py-1 italic">Nessuno entro Δ.</div>
+                                    <div v-for="r in influenceData.outgoing.slice(0,6)" :key="'o'+r.name">
+                                        <button @click="influenceOpen = influenceOpen==='o'+r.name ? null : 'o'+r.name" class="w-full mt-1.5 text-left group">
+                                            <div class="flex items-center gap-1.5 text-[11px]">
+                                                <span class="flex-1 truncate font-medium" :style="{ color: typeColorOf(entityTypeOf(r.name)) }">{{ r.name }}</span>
+                                                <span class="tabular-nums text-slate-400">{{ r.count }}</span>
+                                            </div>
+                                            <div class="h-1.5 rounded mt-0.5 bg-emerald-400 group-hover:bg-emerald-500 transition-colors" :style="{ width: (100*r.count/influenceData.maxOut)+'%' }"></div>
+                                        </button>
+                                        <div v-if="influenceOpen==='o'+r.name" class="mt-1 mb-1 pl-2 border-l-2 border-emerald-200 space-y-1.5">
+                                            <div v-for="(ch,i) in r.chains.slice(0,5)" :key="i" class="text-[10px] leading-tight">
+                                                <button @click="highlightOnMap(ch.trigger.id)" class="block w-full text-left rounded px-1 hover:bg-red-50 text-slate-600" :class="{'bg-red-100 ring-1 ring-red-300': highlightMsgId===ch.trigger.id}" title="Evidenzia sulla mappa"><b>{{ shortTime(ch.trigger.timestamp) }}</b> {{ ch.trigger.from }}→{{ ch.trigger.to }}: «{{ shortText(ch.trigger.content) }}»</button>
+                                                <button @click="highlightOnMap(ch.response.id)" class="block w-full text-left rounded px-1 pl-2 hover:bg-red-50 text-slate-400" :class="{'bg-red-100 ring-1 ring-red-300': highlightMsgId===ch.response.id}" title="Evidenzia sulla mappa">↳ <b>{{ shortTime(ch.response.timestamp) }}</b> {{ ch.response.from }}→{{ ch.response.to }}: «{{ shortText(ch.response.content) }}»</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </aside>
+                </div>
+            </div>
+
+            <!-- TAB 2: Rete di Comunicazione & Gruppi -->
+            <div v-if="activeTab === 2" class="w-full h-full bg-white rounded-xl shadow border border-slate-200 flex flex-col">
+                <div class="p-3 px-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl shrink-0">
+                    <div class="flex items-center gap-4">
+                        <h2 class="font-semibold text-slate-700 flex items-center gap-2">
+                            <i class="fa-solid fa-circle-nodes text-green-500"></i> Rete di Comunicazione
+                        </h2>
+                        <!-- Toggle sotto-vista -->
+                        <div class="flex bg-slate-100 rounded-lg p-0.5 text-xs font-medium">
+                            <button @click="setCommView('groups')" class="px-3 py-1.5 rounded-md transition-colors"
+                                    :class="commView==='groups' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'">Gruppi &amp; Topic</button>
+                            <button @click="setCommView('explore')" class="px-3 py-1.5 rounded-md transition-colors"
+                                    :class="commView==='explore' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'">Esplorazione Rete</button>
+                        </div>
+                    </div>
+
+                    <!-- Controlli vista GRUPPI -->
+                    <label v-if="commView==='groups'" class="flex items-center cursor-pointer bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
+                        <div class="relative">
+                            <input type="checkbox" v-model="filters.suspiciousOnly" class="sr-only">
+                            <div class="block bg-slate-200 w-8 h-5 rounded-full transition" :class="{'bg-red-500': filters.suspiciousOnly}"></div>
+                            <div class="dot absolute left-1 top-1 bg-white w-3 h-3 rounded-full transition" :class="{'transform translate-x-3': filters.suspiciousOnly}"></div>
+                        </div>
+                        <div class="ml-2 text-xs font-medium text-slate-600">Isola Pseudonimi</div>
+                    </label>
+
+                    <!-- Legenda + selezione vista ESPLORAZIONE -->
+                    <div v-else class="flex items-center gap-3 text-[11px] text-slate-500 flex-wrap justify-end">
+                        <span class="flex items-center gap-1"><svg width="14" height="14" viewBox="-7 -7 14 14"><path :d="netShapePath('circle')" fill="#94a3b8"></path></svg>Nome reale</span>
+                        <span class="flex items-center gap-1"><svg width="14" height="14" viewBox="-7 -7 14 14"><path :d="netShapePath('star')" fill="#94a3b8"></path></svg>Pseudonimo</span>
+                        <span v-for="(s, t) in typeStyles" :key="t" class="flex items-center gap-1">
+                            <span class="w-2.5 h-2.5 rounded-full" :style="{ backgroundColor: s.color }"></span>{{ s.label }}
+                        </span>
+                        <span v-if="netSelected" class="text-slate-700 font-medium border-l border-slate-300 pl-3">Selezionato: <b>{{ netNameOf(netSelected) }}</b></span>
+                        <button v-if="netSelected" @click="clearNetSelection()" class="text-blue-600 hover:underline font-medium">Azzera</button>
+                    </div>
+                </div>
+
+                <!-- VISTA GRUPPI -->
+                <div v-if="commView==='groups'" class="flex-1 flex min-h-0">
+                    <div id="chart-community" class="flex-1 p-2 min-h-0"></div>
+
+                    <!-- Pannello Gruppi + Topic predominanti -->
+                    <aside class="w-72 shrink-0 border-l border-slate-100 flex flex-col min-h-0 overflow-y-auto bg-slate-50/50">
+                        <!-- MODO TOPIC: lista di tutti i messaggi del topic selezionato -->
+                        <template v-if="topicSelectedT2 !== null">
+                            <div class="p-3 border-b border-slate-100 shrink-0 bg-slate-50 sticky top-0 z-10">
+                                <button @click="topicSelectedT2 = null" class="text-xs text-blue-600 hover:underline flex items-center gap-1"><i class="fa-solid fa-arrow-left text-[10px]"></i> Gruppi</button>
+                                <div class="mt-1.5 flex items-center gap-2">
+                                    <span class="w-2.5 h-2.5 rounded-sm shrink-0 bg-amber-400"></span>
+                                    <span class="text-xs font-bold text-slate-700 flex-1 truncate">{{ topicLabelT2 }}</span>
+                                    <span class="text-[10px] text-slate-400 tabular-nums">{{ topicMessagesT2.length }} msg</span>
+                                </div>
+                                <div class="text-[10px] text-slate-400 mt-0.5">Tutti i messaggi del topic (rete completa)</div>
+                            </div>
+                            <div class="p-2 space-y-1">
+                                <div v-for="m in topicMessagesT2" :key="m.id" class="text-[11px] border border-slate-100 rounded-md bg-white p-1.5">
+                                    <div class="flex items-center gap-1">
+                                        <b :style="{ color: typeColorOf(entityTypeOf(m.from)) }">{{ m.from }}</b>
+                                        <i class="fa-solid fa-arrow-right text-[8px] text-slate-400"></i>
+                                        <b :style="{ color: typeColorOf(entityTypeOf(m.to)) }">{{ m.to }}</b>
+                                        <span class="ml-auto text-[9px] text-slate-400 tabular-nums shrink-0">{{ m.timestamp.slice(5,16) }}</span>
+                                    </div>
+                                    <div class="text-slate-500 mt-0.5 leading-tight">{{ m.content }}</div>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- MODO EVENTO: messaggi del gruppo con l'evento di corruzione selezionato -->
+                        <template v-else-if="eventSelectedT2 !== null">
+                            <div class="p-3 border-b border-slate-100 shrink-0 bg-slate-50 sticky top-0 z-10">
+                                <button @click="eventSelectedT2 = null" class="text-xs text-blue-600 hover:underline flex items-center gap-1"><i class="fa-solid fa-arrow-left text-[10px]"></i> Gruppi</button>
+                                <div class="mt-1.5 flex items-center gap-2">
+                                    <span class="w-2.5 h-2.5 rounded-sm shrink-0" :style="{ backgroundColor: eventCatT2.color }"></span>
+                                    <span class="text-xs font-bold text-slate-700 flex-1 truncate">{{ eventCatT2.label }}</span>
+                                    <span class="text-[10px] text-slate-400 tabular-nums">{{ eventMessagesT2.length }} msg</span>
+                                </div>
+                                <div class="text-[10px] text-slate-400 mt-0.5">Messaggi inviati da «{{ eventGroupLabelT2 }}» con questo evento</div>
+                            </div>
+                            <div class="p-2 space-y-1">
+                                <div v-for="m in eventMessagesT2" :key="m.id" class="text-[11px] border border-slate-100 rounded-md bg-white p-1.5">
+                                    <div class="flex items-center gap-1">
+                                        <b :style="{ color: typeColorOf(entityTypeOf(m.from)) }">{{ m.from }}</b>
+                                        <i class="fa-solid fa-arrow-right text-[8px] text-slate-400"></i>
+                                        <b :style="{ color: typeColorOf(entityTypeOf(m.to)) }">{{ m.to }}</b>
+                                        <span class="ml-auto text-[9px] text-slate-400 tabular-nums shrink-0">{{ m.timestamp.slice(5,16) }}</span>
+                                    </div>
+                                    <div class="text-slate-500 mt-0.5 leading-tight" v-html="eventHtmlT2(m)"></div>
+                                </div>
+                            </div>
+                        </template>
+
+                        <!-- MODO GRUPPI (default) -->
+                        <template v-else>
+                            <div class="p-3 border-b border-slate-100 flex items-center justify-between shrink-0">
+                                <span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Gruppi ({{ commGroups.length }})</span>
+                                <button v-if="commSelectedGroup !== null" @click="selectGroup(null)"
+                                        class="text-xs text-blue-600 hover:underline">Azzera</button>
+                            </div>
+                            <div class="p-2 space-y-2">
+                                <div v-for="g in commGroups" :key="g.id"
+                                        class="w-full text-left p-2.5 rounded-lg border transition-colors"
+                                        :class="commSelectedGroup === g.id ? 'bg-white border-slate-300 ring-1 ring-slate-300 shadow-sm' : 'border-transparent hover:bg-white'"
+                                        :style="{ opacity: commSelectedGroup !== null && commSelectedGroup !== g.id ? 0.5 : 1 }">
+                                    <button @click="selectGroup(g.id)" class="w-full text-left">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-3 h-3 rounded-full shrink-0" :style="{ backgroundColor: groupColorOf(g.id) }"></span>
+                                            <span class="flex-1 text-xs font-bold text-slate-700 truncate">{{ g.label }}</span>
+                                            <span class="text-[10px] text-slate-400">{{ g.size }} nodi</span>
+                                        </div>
+                                        <div class="mt-1 text-[10px] text-slate-400 truncate">{{ g.members.slice(0,4).join(', ') }}<span v-if="g.members.length>4"> +{{ g.members.length-4 }}</span></div>
+                                    </button>
+                                    <!-- Topic predominanti (barre) — clic = tutti i messaggi del topic -->
+                                    <div class="mt-1.5 space-y-1">
+                                        <div class="text-[9px] uppercase tracking-wide text-slate-400 font-semibold">Topic</div>
+                                        <button v-for="tp in g.topics.slice(0,3)" :key="tp.label" @click.stop="selectTopicT2(tp.label)"
+                                                class="w-full flex items-center gap-1.5" title="Vedi tutti i messaggi di questo topic">
+                                            <div class="flex-1 h-3 rounded bg-slate-100 overflow-hidden relative transition-shadow hover:ring-1 hover:ring-amber-400">
+                                                <div class="h-full rounded" :style="{ width: (100*tp.count/g.topics[0].count)+'%', backgroundColor: groupColorOf(g.id), opacity: 0.55 }"></div>
+                                                <span class="absolute inset-0 flex items-center px-1.5 text-[9px] font-medium text-slate-600 truncate">{{ tp.label }}</span>
+                                            </div>
+                                            <span class="text-[9px] text-slate-400 tabular-nums w-5 text-right">{{ tp.count }}</span>
+                                        </button>
+                                    </div>
+                                    <!-- Eventi di corruzione prodotti dal gruppo (stessa tassonomia della Tab 4) — clic = messaggi con keyword evidenziate -->
+                                    <div v-if="groupEvents[g.id] && groupEvents[g.id].length" class="mt-1.5 space-y-1">
+                                        <div class="text-[9px] uppercase tracking-wide text-slate-400 font-semibold">Eventi di corruzione</div>
+                                        <button v-for="ev in groupEvents[g.id].slice(0,4)" :key="ev.id" @click.stop="selectEventT2(ev.id, g.id)"
+                                                class="w-full flex items-center gap-1.5" title="Vedi i messaggi del gruppo con questo evento">
+                                            <div class="flex-1 h-3 rounded bg-slate-100 overflow-hidden relative transition-shadow hover:ring-1 hover:ring-slate-400">
+                                                <div class="h-full rounded" :style="{ width: (100*ev.count/groupEvents[g.id][0].count)+'%', backgroundColor: ev.color, opacity: 0.65 }"></div>
+                                                <span class="absolute inset-0 flex items-center px-1.5 text-[9px] font-medium text-slate-600 truncate">{{ ev.label }}</span>
+                                            </div>
+                                            <span class="text-[9px] text-slate-400 tabular-nums w-5 text-right">{{ ev.count }}</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </aside>
+                </div>
+
+                <!-- VISTA ESPLORAZIONE RETE (due grafi circolari + pannello messaggi, pagina scrollabile) -->
+                <div v-else class="flex-1 min-h-0 overflow-y-auto p-2">
+                    <div class="flex gap-2 h-full min-h-[480px]">
+                        <div class="flex-1 flex flex-col min-h-0 border border-slate-200 rounded-lg overflow-hidden">
+                            <div class="px-3 py-1.5 text-xs font-semibold text-slate-600 border-b border-slate-100 bg-slate-50 shrink-0">
+                                Communication Graph <span class="font-normal text-slate-400">— archi = messaggi scambiati (spessore = volume)</span>
+                            </div>
+                            <div id="chart-comm-circ" class="flex-1 min-h-0"></div>
+                        </div>
+                        <div class="flex-1 flex flex-col min-h-0 border border-slate-200 rounded-lg overflow-hidden">
+                            <div class="px-3 py-1.5 text-xs font-semibold text-slate-600 border-b border-slate-100 bg-slate-50 shrink-0">
+                                Relationship Graph <span class="font-normal text-slate-400">— seleziona un nodo per vederne le relazioni</span>
+                            </div>
+                            <div id="chart-rel-circ" class="flex-1 min-h-0"></div>
+                        </div>
+                    </div>
+
+                    <!-- Pannello Messaggi: drill-down + ricerca full-text + dimensione "about" -->
+                    <div class="mt-2 h-96 border border-slate-200 rounded-lg flex flex-col overflow-hidden bg-white">
+                        <div class="px-3 py-1.5 border-b border-slate-100 bg-slate-50 flex items-center gap-3 shrink-0">
+                            <span class="text-xs font-semibold text-slate-600 shrink-0"><i class="fa-solid fa-comment-dots mr-1 text-slate-400"></i>Messaggi</span>
+                            <!-- Modo: con / su (about) / tutti -->
+                            <div v-if="netSelected" class="flex bg-slate-100 rounded-md p-0.5 text-[11px] font-medium shrink-0">
+                                <button @click="msgMode='with'" class="px-2 py-0.5 rounded" :class="msgMode==='with'?'bg-white shadow text-slate-800':'text-slate-500'">con {{ netNameOf(netSelected) }}</button>
+                                <button @click="msgMode='about'" class="px-2 py-0.5 rounded" :class="msgMode==='about'?'bg-white shadow text-slate-800':'text-slate-500'">che ne parlano</button>
+                                <button @click="msgMode='all'" class="px-2 py-0.5 rounded" :class="msgMode==='all'?'bg-white shadow text-slate-800':'text-slate-500'">tutti</button>
+                            </div>
+                            <!-- Ricerca full-text -->
+                            <div class="relative flex-1 max-w-xs">
+                                <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400"></i>
+                                <input v-model="msgSearch" type="text" placeholder="Cerca nel testo dei messaggi…"
+                                       class="w-full pl-7 pr-6 py-1 text-xs border border-slate-300 rounded-md focus:ring-1 focus:ring-blue-400 focus:border-blue-400 outline-none">
+                                <button v-if="msgSearch" @click="msgSearch=''" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark text-[10px]"></i></button>
+                            </div>
+                            <span class="text-[11px] text-slate-400 shrink-0 ml-auto">{{ messageList.length }} messaggi</span>
+                        </div>
+                        <div class="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
+                            <div v-if="!netSelected && !msgSearch" class="text-xs text-slate-400 italic py-4 text-center">
+                                Seleziona un nodo nel grafo o cerca nel testo per vedere i messaggi.
+                            </div>
+                            <div v-for="m in messageList" :key="m.id" class="text-xs border-b border-slate-50 pb-1.5">
+                                <div class="flex items-center gap-1.5 flex-wrap">
+                                    <b :style="{ color: typeColorOf(entityTypeOf(m.from)) }">{{ m.from || '—' }}</b>
+                                    <span class="text-slate-400">→</span>
+                                    <b :style="{ color: typeColorOf(entityTypeOf(m.to)) }">{{ m.to || '—' }}</b>
+                                    <span v-if="m.topic>=0" class="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[9px]">{{ topicLabelOf(m.topic) }}</span>
+                                    <span class="text-[10px] text-slate-400 ml-auto">{{ m.timestamp }}</span>
+                                </div>
+                                <div class="text-slate-600 mt-0.5" v-html="highlightText(m.content)"></div>
+                                <div v-if="m.mentions && m.mentions.length" class="mt-0.5 text-[10px] text-slate-400">
+                                    <i class="fa-solid fa-at"></i> parla di:
+                                    <span v-for="mn in m.mentions" :key="mn" class="text-slate-500">{{ mn }}<span v-if="mn!==m.mentions[m.mentions.length-1]">, </span></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 3: Entity Resolution Pseudonimi -->
+            <div v-if="activeTab === 3" class="w-full h-full bg-white rounded-xl shadow border border-slate-200 flex flex-col">
+                <div class="p-3 px-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl shrink-0">
+                    <div class="flex items-center gap-4">
+                        <h2 class="font-semibold text-slate-700 flex items-center gap-2">
+                            <i class="fa-solid fa-user-secret text-purple-400"></i> Entity Resolution: Chi si nasconde dietro gli pseudonimi
+                        </h2>
+                        <div class="flex bg-slate-100 rounded-lg p-0.5 text-xs font-medium">
+                            <button @click="setSimView('similarity')" class="px-3 py-1.5 rounded-md transition-colors"
+                                    :class="simView==='similarity' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'">Similarity Heatmap</button>
+                            <button @click="setSimView('radiotext')" class="px-3 py-1.5 rounded-md transition-colors"
+                                    :class="simView==='radiotext' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'">Alias delle Navi</button>
+                            <button @click="setSimView('deanon')" class="px-3 py-1.5 rounded-md transition-colors"
+                                    :class="simView==='deanon' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'">Scioglimento</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex-1 min-h-0 overflow-y-auto p-2">
+                    <!-- SEZIONE ENTITY RESOLUTION (in alto, piena altezza) -->
+                    <div class="h-full min-h-[460px] flex flex-col border border-slate-200 rounded-lg overflow-hidden">
+                        <div class="px-3 py-1.5 text-xs text-slate-500 border-b border-slate-100 bg-slate-50 shrink-0">
+                            <template v-if="simView==='similarity'">Similarità comportamentale <b>pseudonimo × entità</b> (contatti in comune 50% · topic 30% · orario 20%). Celle accese = probabile stessa identità/coordinamento.</template>
+                            <template v-else-if="simView==='radiotext'"><b>Chi opera davvero le navi</b>: il nome-radio di una nave (es. «Mako») maschera l'operatore umano. Confrontando il call-sign radio col preambolo del testo emerge la coppia reale — <b>Mako→Davis, Remora→Rodriguez</b>. Le celle fuori diagonale sono le attribuzioni rettificate.</template>
+                            <template v-else><b>Scioglimento degli pseudonimi</b>: collassando ogni alias sull'identità reale, il n° di attori cala e i flussi si riversano su chi era nascosto. Il grafo non ha una relazione «è-alias-di» → ogni corrispondenza è una tesi con la sua evidenza.</template>
+                        </div>
+                        <div v-show="simView==='similarity'" id="chart-simheat" class="flex-1 min-h-0"></div>
+                        <div v-if="simView==='radiotext'" class="flex-1 min-h-0 flex flex-col">
+                            <!-- Due matrici di confusione (mittente + destinatario) come la tesi -->
+                            <div class="flex gap-2 p-2 shrink-0" style="height: 300px">
+                                <div class="flex-1 flex flex-col border border-slate-100 rounded overflow-hidden">
+                                    <div class="px-2 py-1 text-[11px] font-semibold text-slate-600 border-b border-slate-100 bg-slate-50 shrink-0">Nome-radio mittente × Operatore reale</div>
+                                    <div id="chart-radioheat-send" class="flex-1 min-h-0"></div>
+                                </div>
+                                <div class="flex-1 flex flex-col border border-slate-100 rounded overflow-hidden">
+                                    <div class="px-2 py-1 text-[11px] font-semibold text-slate-600 border-b border-slate-100 bg-slate-50 shrink-0">Nome-radio destinatario × Operatore reale</div>
+                                    <div id="chart-radioheat-recv" class="flex-1 min-h-0"></div>
+                                </div>
+                            </div>
+                            <!-- Tabella di dettaglio delle sostituzioni -->
+                            <div class="flex-1 min-h-0 overflow-y-auto border-t border-slate-100">
+                                <div class="px-3 py-1 text-[10px] text-slate-400 bg-slate-50 sticky top-0">Diagonale = corrispondenza · <span class="text-red-600">bordo rosso = sostituzione</span> · {{ radioTextRows.length }} disallineamenti nei messaggi:</div>
+                                <table class="w-full text-xs">
+                                    <tbody>
+                                        <tr v-for="r in radioTextRows" :key="r.id" class="border-b border-slate-50 hover:bg-slate-50">
+                                            <td class="px-3 py-1.5 whitespace-nowrap">
+                                                <span class="text-slate-400 text-[10px]">radio:</span>
+                                                <b :style="{ color: typeColorOf(entityTypeOf(r.radioFrom)) }">{{ r.radioFrom || '—' }}</b>
+                                                <span class="text-slate-300">→</span> {{ r.radioTo || '—' }}
+                                            </td>
+                                            <td class="px-3 py-1.5 whitespace-nowrap">
+                                                <span class="text-slate-400 text-[10px]">testo:</span>
+                                                <b :style="{ color: typeColorOf(entityTypeOf(r.textFrom)) }">{{ r.textFrom || '?' }}</b>
+                                                <span class="text-slate-300">→</span> {{ r.textTo || '?' }}
+                                            </td>
+                                            <td class="px-3 py-1.5 text-slate-500 max-w-md truncate" :title="r.content">{{ r.content }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- VISTA SCIOGLIMENTO (de-anonimizzazione) -->
+                        <div v-if="simView==='deanon'" class="flex-1 min-h-0 overflow-y-auto p-3">
+                            <!-- KPI riepilogo -->
+                            <div class="flex items-center gap-3 mb-3 text-sm">
+                                <div class="px-3 py-2 rounded-lg bg-slate-100 text-slate-700"><b class="text-lg">{{ deanonData.nBefore }}</b> attori <span class="text-slate-400">prima</span></div>
+                                <i class="fa-solid fa-arrow-right-long text-slate-400"></i>
+                                <div class="px-3 py-2 rounded-lg bg-purple-100 text-purple-800"><b class="text-lg">{{ deanonData.nAfter }}</b> attori <span class="text-purple-400">dopo</span></div>
+                                <span class="text-xs text-slate-500 ml-2">Sciogliendo gli pseudonimi, {{ deanonData.nBefore - deanonData.nAfter }} nodi anonimi spariscono e i loro messaggi si riversano su chi era nascosto.</span>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <!-- Colonna sinistra: tabella di risoluzione + anello -->
+                                <div>
+                                    <div class="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Corrispondenze alias → identità reale</div>
+                                    <div class="space-y-1.5">
+                                        <div v-for="r in deanonData.rows" :key="r.alias" class="border border-slate-200 rounded-lg p-2">
+                                            <div class="flex items-center gap-2 text-sm">
+                                                <b class="text-red-700">{{ r.alias }}</b>
+                                                <i class="fa-solid fa-arrow-right-long text-slate-300 text-xs"></i>
+                                                <b :style="{ color: typeColorOf(r.type) }">{{ r.real }}</b>
+                                                <span class="ml-auto text-[11px] text-slate-400 tabular-nums">{{ r.moved }} msg</span>
+                                            </div>
+                                            <div class="flex items-center gap-2 mt-1">
+                                                <div class="flex-1 h-1.5 rounded bg-slate-100 overflow-hidden">
+                                                    <div class="h-full rounded bg-purple-400" :style="{ width: Math.round(r.score*100)+'%' }"></div>
+                                                </div>
+                                                <span class="text-[10px] text-slate-500 tabular-nums">sim {{ r.score.toFixed(2) }}</span>
+                                            </div>
+                                            <div class="text-[10px] text-slate-400 mt-0.5">{{ r.note }}</div>
+                                        </div>
+                                        <!-- Anello: non si risolve in un nome -->
+                                        <div class="border border-amber-200 bg-amber-50/50 rounded-lg p-2">
+                                            <div class="flex items-center gap-2 text-sm">
+                                                <span class="text-red-700 font-semibold">{{ deanonData.ring.map(x=>x.alias).join(' · ') }}</span>
+                                                <span class="ml-auto text-[11px] text-slate-400 tabular-nums">{{ deanonData.ringMoved }} msg</span>
+                                            </div>
+                                            <div class="text-[11px] text-amber-800 mt-1">
+                                                <i class="fa-solid fa-circle-nodes mr-1"></i>Anello di pseudonimi: somigliano soprattutto <b>tra loro</b>, non a una persona nota → collassano in un unico nodo <b>{{ deanonData.map['Boss'] }}</b> (identità reale non attribuibile ai soli dati radio).
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Colonna destra: prima / dopo per volume -->
+                                <div>
+                                    <div class="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Attori più attivi: prima → dopo</div>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <div class="text-[10px] font-semibold text-slate-400 uppercase mb-1">Prima (con pseudonimi)</div>
+                                            <div v-for="a in deanonData.topBefore" :key="'b'+a.name" class="mb-1">
+                                                <div class="flex items-center gap-1 text-[11px]">
+                                                    <span class="flex-1 truncate" :class="a.alias ? 'text-red-700 font-semibold' : 'text-slate-600'">{{ a.name }}</span>
+                                                    <span class="tabular-nums text-slate-400">{{ a.v }}</span>
+                                                </div>
+                                                <div class="h-1.5 rounded" :class="a.alias ? 'bg-red-400' : 'bg-slate-300'" :style="{ width: (100*a.v/deanonData.maxBefore)+'%' }"></div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div class="text-[10px] font-semibold text-slate-400 uppercase mb-1">Dopo (sciolti)</div>
+                                            <div v-for="a in deanonData.topAfter" :key="'a'+a.name" class="mb-1">
+                                                <div class="flex items-center gap-1 text-[11px]">
+                                                    <span class="flex-1 truncate" :class="a.merged ? 'text-purple-700 font-semibold' : 'text-slate-600'">{{ a.name }}</span>
+                                                    <span class="tabular-nums text-slate-400">{{ a.v }}</span>
+                                                </div>
+                                                <div class="h-1.5 rounded" :class="a.merged ? 'bg-purple-400' : 'bg-slate-300'" :style="{ width: (100*a.v/deanonData.maxAfter)+'%' }"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="text-[10px] text-slate-400 mt-2 leading-tight"><span class="text-purple-600 font-semibold">Viola</span> = identità emerse dallo scioglimento. Chi era spezzato in più handle ora appare per quanto pesa davvero.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SANKEY (in fondo, raggiungibile scrollando) -->
+                    <div class="mt-2 border border-slate-200 rounded-lg overflow-hidden">
+                        <div class="px-3 py-1.5 border-b border-slate-100 bg-slate-50 flex items-center justify-between shrink-0">
+                            <span class="text-xs font-semibold text-slate-600"><i class="fa-solid fa-water text-purple-300 mr-1"></i>Flussi Pseudonimi (Sankey)</span>
+                            <label class="flex items-center cursor-pointer text-xs">
+                                <div class="relative">
+                                    <input type="checkbox" v-model="filters.suspiciousOnly" class="sr-only">
+                                    <div class="block bg-slate-200 w-8 h-5 rounded-full transition" :class="{'bg-red-500': filters.suspiciousOnly}"></div>
+                                    <div class="dot absolute left-1 top-1 bg-white w-3 h-3 rounded-full transition" :class="{'transform translate-x-3': filters.suspiciousOnly}"></div>
+                                </div>
+                                <span class="ml-2 font-medium text-slate-600">Isola Flussi Sospetti</span>
+                            </label>
+                        </div>
+                        <div id="chart-sankey" class="w-full" style="height: 420px"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 4: Dossier Nadia Conti -->
+            <div v-if="activeTab === 4" class="w-full h-full overflow-y-auto">
+              <div class="flex gap-4 h-full min-h-[900px]">
+                <!-- Sinistra: la rete del target + la timeline delle prove -->
+                <div class="w-1/2 h-full flex flex-col gap-4">
+                    <div class="flex-[4] bg-white rounded-xl shadow border border-slate-200 flex flex-col min-h-0">
+                        <div class="p-3 px-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl shrink-0">
+                            <h2 class="font-semibold text-slate-700 flex items-center gap-2">
+                                <i class="fa-solid fa-microscope text-blue-500"></i> Con chi parla il target
+                            </h2>
+                            <div class="flex items-center gap-3">
+                                <select v-model="filters.egoTarget" class="text-xs border-slate-300 rounded shadow-sm focus:ring-blue-500 focus:border-blue-500 p-1.5 border outline-none bg-white">
+                                    <option value="Nadia Conti">Nadia Conti (Target)</option>
+                                    <option value="Boss">"Boss" (Pseudonimo)</option>
+                                    <option value="The Lookout">"The Lookout"</option>
+                                    <option value="Mrs. Money">"Mrs. Money"</option>
+                                    <option value="The Intern">"The Intern"</option>
+                                </select>
+                                <label class="flex items-center gap-1.5 text-xs text-slate-600 bg-white px-2 py-1.5 rounded border border-slate-200 shadow-sm cursor-pointer">
+                                    <input type="checkbox" v-model="filters.showInferred" class="rounded text-blue-500"> Archi dedotti
+                                </label>
+                            </div>
+                        </div>
+                        <div id="chart-ego" class="flex-1 w-full h-full min-h-0"></div>
+                        <div class="px-4 py-2 border-t border-slate-100 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500 shrink-0">
+                            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full inline-block" style="background:#b91c1c"></span> pseudonimo</span>
+                            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full inline-block" style="background:#d55e00"></span> contatto compromesso</span>
+                            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full inline-block" style="background:#64748b"></span> contatto neutro</span>
+                            <span class="flex items-center gap-1"><span class="w-4 border-t-2 border-dashed inline-block" style="border-color:#f59e0b"></span> arco dedotto</span>
+                            <span class="text-slate-400 italic">area = n. messaggi · clic per filtrare le prove</span>
+                        </div>
+                    </div>
+
+                    <div class="flex-[3] bg-white rounded-xl shadow border border-slate-200 flex flex-col min-h-0">
+                        <div class="p-3 px-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl shrink-0 gap-2">
+                            <h2 class="text-sm font-semibold text-slate-700 shrink-0">Timeline delle prove</h2>
+                            <div class="flex items-center gap-2">
+                                <span v-if="filters.showIndirect" class="text-[10px] text-amber-700 italic hidden sm:inline">bordo ambra = parlano di lei</span>
+                                <button @click="filters.showIndirect = !filters.showIndirect"
+                                    class="px-2 py-1 rounded-full text-[10px] font-semibold border transition whitespace-nowrap"
+                                    :class="filters.showIndirect
+                                        ? 'bg-amber-500 text-white border-amber-500'
+                                        : 'bg-white text-amber-700 border-amber-300 hover:bg-amber-50'">
+                                    <i class="fa-solid" :class="filters.showIndirect ? 'fa-eye' : 'fa-eye-slash'"></i>
+                                    Messaggi indiretti
+                                </button>
+                            </div>
+                        </div>
+                        <div id="chart-events" class="flex-1 w-full h-full min-h-0"></div>
+                    </div>
+
+                    <div class="flex-[4] bg-white rounded-xl shadow border border-slate-200 flex flex-col min-h-0">
+                        <div class="p-3 px-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl shrink-0 gap-2">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <h2 class="text-sm font-semibold text-slate-700 shrink-0">Eventi di corruzione nel tempo</h2>
+                                <span v-if="trendScope === 'target'" class="text-[11px] italic truncate" :class="dossierContact ? 'text-blue-600' : 'text-slate-400'">
+                                    {{ dossierContact ? '· solo scambi con ' + dossierContact : '· catena di ' + filters.egoTarget }}
+                                </span>
+                                <span v-else class="text-[11px] italic text-slate-400 truncate">· tutte le comunicazioni</span>
+                            </div>
+                            <!-- Toggle scope: catena del target vs intero dataset -->
+                            <div class="flex rounded-lg border border-slate-300 overflow-hidden shrink-0 text-[10px] font-semibold">
+                                <button @click="setTrendScope('target')"
+                                    :class="trendScope === 'target' ? 'bg-blue-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-100'"
+                                    class="px-2 py-1 transition">Target</button>
+                                <button @click="setTrendScope('all')"
+                                    :class="trendScope === 'all' ? 'bg-blue-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-100'"
+                                    class="px-2 py-1 transition border-l border-slate-300">Tutte</button>
+                            </div>
+                        </div>
+                        <div id="chart-trend" class="flex-1 w-full min-h-0"></div>
+                        <div id="trend-legend" class="shrink-0 px-4 py-2 border-t border-slate-100 flex flex-wrap gap-x-3 gap-y-1 text-[10px] leading-tight"></div>
+                    </div>
+                </div>
+
+                <!-- Destra: la catena delle prove -->
+                <div class="w-1/2 h-full bg-white rounded-xl shadow border border-slate-200 flex flex-col min-h-0">
+                    <div class="p-3 px-5 border-b border-slate-100 bg-slate-50 rounded-t-xl shrink-0">
+                        <div class="flex justify-between items-center">
+                            <h2 class="font-semibold text-slate-700 flex items-center gap-2">
+                                <i class="fa-solid fa-folder-open text-blue-500"></i> Catena delle prove
+                            </h2>
+                            <span class="text-xs text-slate-500">
+                                <b class="text-red-700">{{ dossierData.flagged }}</b> messaggi incriminanti su {{ dossierData.total }}
+                            </span>
+                        </div>
+
+                        <!-- Sintesi del dossier -->
+                        <p class="text-xs text-slate-600 mt-2 leading-relaxed">
+                            {{ filters.egoTarget }} compare in <b>{{ dossierData.total }}</b> comunicazioni
+                            (tema dominante: <b>{{ dossierData.topTopic }}</b>) e risulta collegata a
+                            <b>{{ dossierData.complici.length }}</b> possibili complici:
+                            <span class="text-slate-500">{{ dossierData.complici.join(', ') }}</span>.
+                            <span v-if="dossierData.corrected" class="text-sky-700">
+                                In <b>{{ dossierData.corrected }}</b> casi i metadati radio erano sbagliati e il preambolo
+                                del messaggio li ha rettificati.
+                            </span>
+                        </p>
+
+                        <!-- Capi d'accusa: filtri -->
+                        <div class="flex flex-wrap gap-1.5 mt-2">
+                            <button v-for="a in accuse" :key="a.id" @click="toggleAccusa(a.id)"
+                                :disabled="!dossierData.counts[a.id]"
+                                class="px-2 py-1 rounded-full text-[10px] font-semibold border transition disabled:opacity-30 disabled:cursor-not-allowed"
+                                :style="dossierAccusa === a.id
+                                    ? { background: a.color, color: '#fff', borderColor: a.color }
+                                    : { color: a.color, borderColor: a.color, background: '#fff' }">
+                                {{ a.label }} · {{ dossierData.counts[a.id] }}
+                            </button>
+                            <button v-if="dossierAccusa || dossierContact" @click="clearDossierFilters"
+                                class="px-2 py-1 rounded-full text-[10px] font-semibold border border-slate-300 text-slate-500 hover:bg-slate-100">
+                                <i class="fa-solid fa-xmark"></i> azzera filtri
+                            </button>
+                        </div>
+                        <p v-if="dossierContact" class="text-[11px] text-slate-500 mt-1.5">
+                            Filtro contatto: <b class="text-slate-700">{{ dossierContact }}</b>
+                        </p>
+                    </div>
+
+                    <!-- Elenco prove -->
+                    <div class="flex-1 overflow-y-auto p-3 space-y-2 min-h-0">
+                        <div v-if="!dossierList.length" class="text-center text-slate-400 text-sm py-10">
+                            Nessun messaggio con questi filtri.
+                        </div>
+                        <div v-for="m in dossierList" :key="m.id" :id="'ev-' + m.id"
+                            class="border rounded-lg p-3 transition"
+                            :class="m.tags.length ? 'border-red-200 bg-red-50/50' : 'border-slate-200 bg-white'">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="font-mono text-[10px] text-slate-400">{{ m.ts }}</span>
+                                <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                                    :class="{'bg-red-100 text-red-700': m.dir === 'sent',
+                                             'bg-blue-100 text-blue-700': m.dir === 'recv',
+                                             'bg-amber-100 text-amber-800': m.dir === 'about'}">
+                                    {{ m.dir === 'sent' ? 'inviato' : (m.dir === 'recv' ? 'ricevuto' : 'parlano di lei') }}
+                                </span>
+                            </div>
+                            <div class="text-xs font-semibold text-slate-700 mt-1">
+                                {{ m.from }} <i class="fa-solid fa-arrow-right text-[9px] text-slate-400 mx-0.5"></i> {{ m.to }}
+                                <span v-if="m.corrected"
+                                    class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-sky-100 text-sky-800 border border-sky-300">
+                                    <i class="fa-solid fa-check-double"></i> rettificato dal testo
+                                </span>
+                                <span v-else-if="m.uncertain"
+                                    class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+                                    <i class="fa-solid fa-triangle-exclamation"></i> attribuzione incerta
+                                </span>
+                            </div>
+                            <!-- Rettifica certa: la formula d'apertura del messaggio smentisce i metadati radio -->
+                            <div v-if="m.corrected" class="mt-1 text-[10px] text-sky-900 bg-sky-50 border border-sky-200 rounded px-2 py-1 leading-relaxed">
+                                I metadati radio dicevano <span class="line-through">{{ m.radioFrom }} → {{ m.radioTo }}</span>,
+                                ma la formula d'apertura del messaggio identifica <b>{{ m.textFrom }}</b> come mittente e
+                                <b>{{ m.textTo }}</b> come destinatario.
+                            </div>
+                            <!-- Indecidibile: metadati radio rotti (auto-anello) e nessuna formula d'apertura -->
+                            <div v-else-if="m.uncertain" class="mt-1 text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 leading-relaxed">
+                                I metadati radio sono corrotti ({{ m.radioFrom }} → {{ m.radioTo }}) e il messaggio non ha
+                                una formula d'apertura: il destinatario non è determinabile.
+                            </div>
+                            <div class="flex flex-wrap gap-1 my-1.5">
+                                <span v-for="t in m.tags" :key="t"
+                                    class="px-1.5 py-0.5 rounded text-[10px] font-semibold text-white"
+                                    :style="{ background: accusaById(t).color }">{{ accusaById(t).label }}</span>
+                                <!-- Nuovi "topic": categorie di eventi di corruzione (stessa tassonomia del grafico) -->
+                                <span v-for="e in m.events" :key="e"
+                                    class="px-1.5 py-0.5 rounded text-[10px] font-medium inline-flex items-center gap-1 border"
+                                    :style="{ color: corruptionEventById(e).color, borderColor: corruptionEventById(e).color + '66', background: corruptionEventById(e).color + '14' }">
+                                    <span class="w-1.5 h-1.5 rounded-full" :style="{ background: corruptionEventById(e).color }"></span>{{ corruptionEventById(e).label }}
+                                </span>
+                                <span v-if="!m.tags.length && !m.events.length"
+                                    class="px-1.5 py-0.5 rounded text-[10px] bg-slate-100 text-slate-400">nessun tema di corruzione</span>
+                            </div>
+                            <p class="text-xs text-slate-700 leading-relaxed" v-html="dossierHtml(m)"></p>
+                        </div>
+                    </div>
+                </div>
+              </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script>
+        const showTooltip = (event, html) => {
+            const t = d3.select('#tooltip');
+            t.html(html);
+            const node = t.node();
+            const tw = node.offsetWidth, th = node.offsetHeight;
+            const pad = 15, vw = window.innerWidth, vh = window.innerHeight;
+            let left = event.clientX + pad, top = event.clientY + pad;
+            // Ribalta a sinistra/alto se uscirebbe dallo schermo
+            if (left + tw > vw - 6) left = event.clientX - tw - pad;
+            if (top + th > vh - 6) top = event.clientY - th - pad;
+            left = Math.max(6, left);
+            top = Math.max(6, top);
+            t.style('left', left + 'px').style('top', top + 'px')
+             .transition().duration(150).style('opacity', 1);
+        };
+        const hideTooltip = () => d3.select('#tooltip').transition().duration(200).style('opacity', 0);
+
+        // ==========================================
+        // 0. DATA MODEL — deriva tutto dal grafo reale (window.VAST_DATA)
+        // ==========================================
+        const DataModel = {
+            ready: false,
+            nodeById: {},
+            entities: [],
+            communications: [],   // {id, from, to, content, timestamp, hour, date, dow, slot}
+            pairs: [],            // {from, to, value} (entità -> entità, direzionale)
+            entityEdges: {},      // id -> [{other, type, inferred}] (da nodi Relationship)
+            pseudonyms: new Set(["Boss","The Lookout","The Intern","The Middleman","Mrs. Money","Small Fry","The Accountant"]),
+            NIGHT_HOURS: [0,1,2,3,4,5],
+
+            isPseudonym(name) { return this.pseudonyms.has(name); },
+
+            init() {
+                if (this.ready) return;
+                const G = window.VAST_DATA;
+                if (!G) { console.error("VAST_DATA non caricato (data.js mancante?)"); return; }
+
+                G.nodes.forEach(n => this.nodeById[n.id] = n);
+                this.entities = G.nodes.filter(n => n.type === 'Entity');
+                const entIds = new Set(this.entities.map(e => e.id));
+
+                // --- Ricostruzione comunicazioni: entità --sent--> Comm --received--> entità
+                const sentBy = {}, recvBy = {};
+                G.links.forEach(l => {
+                    if (l.type === 'sent')     sentBy[l.target] = l.source;
+                    if (l.type === 'received') recvBy[l.source] = l.target;
+                });
+                // ATTRIBUZIONE MITTENTE/DESTINATARIO — risolta QUI, una volta sola, per TUTTE le tab.
+                // I metadati radio (archi sent/received) sbagliano spesso: 31 auto-anelli assurdi
+                // ("Green Guardians → Green Guardians") e 79 messaggi in cui il testo li smentisce.
+                // Il protocollo radio però ha formule d'apertura che fissano entrambi i ruoli senza
+                // ambiguità («Davis, Nadia here», «Green Guardians, Sentinel reporting», «Davis here
+                // to V. Miesel Shipping», «V. Miesel HQ to Nadia»): quando ci sono — 541 messaggi su
+                // 584, marcati `canon` offline da resolve_senders_bert.py — il TESTO VINCE e rettifica
+                // la radio. Negli altri casi valgono i metadati radio. Le estrazioni non canoniche
+                // (BERT QA) non attribuiscono mai: sono rumorose.
+                // `from`/`to` sono quindi l'attribuzione RETTIFICATA, usata ovunque; `radioFrom`/`radioTo`
+                // conservano il dato grezzo (serve alla Tab 3, che confronta proprio le due fonti).
+                this.communications = G.nodes
+                    .filter(n => n.sub_type === 'Communication')
+                    .map(c => {
+                        const radioFrom = sentBy[c.id] || null, radioTo = recvBy[c.id] || null;
+                        const textFrom = c.text_from || null, textTo = c.text_to || null;
+                        const canon = c.text_from_src === 'canon' && c.text_to_src === 'canon' && textFrom !== textTo;
+                        return {
+                            id: c.id,
+                            from: canon ? textFrom : radioFrom,
+                            to: canon ? textTo : radioTo,
+                            radioFrom, radioTo, textFrom, textTo, canon,
+                            corrected: canon && (textFrom !== radioFrom || textTo !== radioTo),
+                            content: c.content || '', timestamp: c.timestamp || '',
+                            hour: (c.hour === undefined || c.hour === null) ? -1 : +c.hour,
+                            date: c.date_only || 'Unknown', dow: c.day_of_week || '', slot: c.time_slot || '',
+                            topic: (c.topic === undefined || c.topic === null) ? -1 : c.topic,
+                            mentions: Array.isArray(c.mentions) ? c.mentions : [],
+                            textFromSrc: c.text_from_src || null, textToSrc: c.text_to_src || null
+                        };
+                    });
+
+                // --- Coppie direzionali entità -> entità
+                const pairMap = {};
+                this.communications.forEach(c => {
+                    if (c.from && c.to) {
+                        const k = c.from + '' + c.to;
+                        pairMap[k] = (pairMap[k] || 0) + 1;
+                    }
+                });
+                this.pairs = Object.entries(pairMap).map(([k, v]) => {
+                    const [from, to] = k.split('');
+                    return { from, to, value: v };
+                });
+
+                // --- Archi entità-entità dai nodi Relationship (per l'ego-network)
+                const relNodes = G.nodes.filter(n => n.type === 'Relationship');
+                relNodes.forEach(r => {
+                    const linked = [];
+                    G.links.forEach(l => {
+                        if (l.source === r.id && entIds.has(l.target)) linked.push({ id: l.target, inferred: !!l.is_inferred });
+                        if (l.target === r.id && entIds.has(l.source)) linked.push({ id: l.source, inferred: !!l.is_inferred });
+                    });
+                    for (let i = 0; i < linked.length; i++)
+                        for (let j = i + 1; j < linked.length; j++) {
+                            const a = linked[i], b = linked[j];
+                            const inf = a.inferred || b.inferred;
+                            (this.entityEdges[a.id] = this.entityEdges[a.id] || []).push({ other: b.id, type: r.sub_type, inferred: inf });
+                            (this.entityEdges[b.id] = this.entityEdges[b.id] || []).push({ other: a.id, type: r.sub_type, inferred: inf });
+                        }
+                });
+
+                // --- Partecipanti alle comunicazioni: conteggio + colore identità
+                const cnt = {};
+                this.communications.forEach(c => {
+                    if (c.from) cnt[c.from] = (cnt[c.from] || 0) + 1;
+                    if (c.to && c.to !== c.from) cnt[c.to] = (cnt[c.to] || 0) + 1;
+                });
+                const names = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || a.localeCompare(b));
+                const palette = d3.schemeTableau10
+                    .concat(d3.schemeSet3 || [], d3.schemePaired || [], d3.schemeSet2 || [], d3.schemeDark2 || []);
+                this.participantColorScale = d3.scaleOrdinal().domain(names).range(palette);
+                this.participants = names.map(n => ({
+                    id: n, name: n, type: (this.nodeById[n] ? this.nodeById[n].sub_type : '?'),
+                    count: cnt[n], color: this.participantColorScale(n)
+                }));
+
+                // --- Topic (NMF, calcolati offline ed embeddati in data.js)
+                this.topics = (G.topics || []).map(t => ({ ...t }));
+                this.msgTopic = {};
+                this.communications.forEach(c => { this.msgTopic[c.id] = (this.nodeById[c.id] || {}).topic; });
+
+                // --- Gruppi di comunicazione (Louvain sulla rete di comunicazione, offline)
+                this.commGroups = (G.commGroups || []).map(g => ({ ...g }));
+
+                this.ready = true;
+            },
+
+            topicLabel(id) { const t = (this.topics || []).find(x => x.id === id); return t ? t.label : 'Altro'; },
+
+            // Rete di comunicazione entità-entità (nodi = partecipanti, archi = volume messaggi)
+            commNetwork() {
+                const names = new Set(), edgeMap = {};
+                this.pairs.forEach(p => {
+                    if (p.from === p.to) return;   // no auto-anelli
+                    names.add(p.from); names.add(p.to);
+                    const k = [p.from, p.to].sort().join('');
+                    edgeMap[k] = (edgeMap[k] || 0) + p.value;
+                });
+                const links = Object.entries(edgeMap).map(([k, w]) => {
+                    const [a, b] = k.split(''); return { source: a, target: b, weight: w };
+                });
+                const deg = {};
+                links.forEach(l => { deg[l.source] = (deg[l.source] || 0) + l.weight; deg[l.target] = (deg[l.target] || 0) + l.weight; });
+                const nodes = [...names].map(name => {
+                    const e = this.nodeById[name] || {};
+                    return {
+                        id: name, name, type: e.sub_type || '?',
+                        group: (e.comm_group === undefined || e.comm_group === null) ? -1 : e.comm_group,
+                        degree: deg[name] || 0
+                    };
+                });
+                return { nodes, links, groups: this.commGroups };
+            },
+
+            // Insieme di nodi per i grafi circolari (entità con almeno un arco: comm o relazione)
+            networkEntities() {
+                const set = new Set();
+                this.pairs.forEach(p => { set.add(p.from); set.add(p.to); });
+                Object.keys(this.entityEdges).forEach(id => {
+                    set.add(id); (this.entityEdges[id] || []).forEach(e => set.add(e.other));
+                });
+                const order = { Person: 0, Group: 1, Organization: 2, Vessel: 3, Location: 4 };
+                return [...set].filter(id => this.nodeById[id]).map(id => {
+                    const e = this.nodeById[id];
+                    return { id, name: e.name || id, type: e.sub_type || '?', pseudonym: this.isPseudonym(e.name || id) };
+                }).sort((a, b) => (order[a.type] ?? 9) - (order[b.type] ?? 9) || a.name.localeCompare(b.name));
+            },
+
+            // --- TASK 3: similarità comportamentale (pseudonimi vs entità) ---
+            _featureVectors() {
+                if (this._feat) return this._feat;
+                const contacts = {}, topics = {}, hours = {};
+                const add = (o, k, sk) => { (o[k] = o[k] || {}); o[k][sk] = (o[k][sk] || 0) + 1; };
+                this.communications.forEach(c => {
+                    if (c.from && c.to) { add(contacts, c.from, c.to); add(contacts, c.to, c.from); }
+                    [c.from, c.to].forEach(who => {
+                        if (!who) return;
+                        if (c.topic >= 0) add(topics, who, 't' + c.topic);
+                        if (c.hour >= 0) add(hours, who, 'h' + c.hour);
+                    });
+                });
+                return (this._feat = { contacts, topics, hours });
+            },
+            _cos(a, b, drop) {
+                const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+                let num = 0, na = 0, nb = 0;
+                keys.forEach(k => { if (drop && drop.has(k)) return; num += (a[k] || 0) * (b[k] || 0); });
+                Object.keys(a || {}).forEach(k => { if (drop && drop.has(k)) return; na += a[k] * a[k]; });
+                Object.keys(b || {}).forEach(k => { if (drop && drop.has(k)) return; nb += b[k] * b[k]; });
+                return (na && nb) ? num / Math.sqrt(na * nb) : 0;
+            },
+            similarity(p, e) {
+                const f = this._featureVectors();
+                const c = this._cos(f.contacts[p] || {}, f.contacts[e] || {}, new Set([p, e]));
+                const t = this._cos(f.topics[p] || {}, f.topics[e] || {});
+                const h = this._cos(f.hours[p] || {}, f.hours[e] || {});
+                return { score: 0.5 * c + 0.3 * t + 0.2 * h, c, t, h };
+            },
+            similarityMatrix() {
+                const f = this._featureVectors();
+                const pseudos = [...this.pseudonyms].filter(p => f.contacts[p]);
+                const entities = Object.keys(f.contacts).filter(e => (this.nodeById[e] || {}).type === 'Entity');
+                const cells = {}, colMax = {};
+                pseudos.forEach(p => entities.forEach(e => {
+                    const s = (e === p) ? null : this.similarity(p, e);
+                    cells[p + '|' + e] = s;
+                    if (s) colMax[e] = Math.max(colMax[e] || 0, s.score);
+                }));
+                const cols = entities.slice().sort((a, b) => (colMax[b] || 0) - (colMax[a] || 0));
+                return { pseudos, cols, cells, colMax };
+            },
+
+            // --- TASK 3: scioglimento pseudonimi (de-anonimizzazione) ---
+            // Il grafo non contiene una relazione "è-alias-di": lo scioglimento è una TESI, non un
+            // dato di verità. Ogni voce dichiara la propria evidenza (similarità calcolata live +
+            // relazione operatore). L'anello di pseudonimi NON si risolve in un nome — i suoi handle
+            // somigliano soprattutto tra loro → un unico nodo coordinato "Rete Pseudonimi".
+            RESOLUTION: [
+                { alias: 'The Intern',  real: 'Sam',       note: 'stesso profilo di contatti e orari' },
+                { alias: 'The Lookout', real: 'Kelly',     note: 'primo candidato persona reale' },
+                { alias: 'Small Fry',   real: 'Rodriguez', note: 'opera la nave Remora' }
+            ],
+            RING: ['Boss', 'The Middleman', 'The Accountant', 'Mrs. Money'],
+            RING_LABEL: 'Rete Pseudonimi',
+
+            resolveMap() {
+                const m = {};
+                this.RESOLUTION.forEach(r => { m[r.alias] = r.real; });
+                this.RING.forEach(a => { m[a] = this.RING_LABEL; });
+                return m;
+            },
+
+            deanonymization() {
+                const map = this.resolveMap();
+                const before = {}, after = {};
+                const bump = (o, k) => { if (k) o[k] = (o[k] || 0) + 1; };
+                this.communications.forEach(c => {
+                    bump(before, c.from); bump(before, c.to);
+                    bump(after, map[c.from] || c.from); bump(after, map[c.to] || c.to);
+                });
+                const rows = this.RESOLUTION.map(r => ({
+                    ...r,
+                    score: this.similarity(r.alias, r.real).score,
+                    moved: before[r.alias] || 0,
+                    type: (this.nodeById[r.real] || {}).sub_type || '?'
+                }));
+                const ring = this.RING.map(a => ({ alias: a, moved: before[a] || 0 }))
+                    .sort((a, b) => b.moved - a.moved);
+                const ringMoved = ring.reduce((s, r) => s + r.moved, 0);
+                const realSet = new Set([...this.RESOLUTION.map(r => r.real), this.RING_LABEL]);
+                const top = o => Object.entries(o).map(([name, v]) => ({ name, v }))
+                    .sort((a, b) => b.v - a.v).slice(0, 10);
+                return {
+                    rows, ring, ringMoved, map,
+                    topBefore: top(before).map(o => ({ ...o, alias: this.isPseudonym(o.name) })),
+                    topAfter: top(after).map(o => ({ ...o, merged: realSet.has(o.name) })),
+                    nBefore: Object.keys(before).length, nAfter: Object.keys(after).length,
+                    maxBefore: d3.max(Object.values(before)) || 1,
+                    maxAfter: d3.max(Object.values(after)) || 1
+                };
+            },
+
+            // --- TASK 3: confronto fra le DUE fonti di attribuzione ---
+            // Qui — e SOLO qui — si usa il dato radio grezzo (`radioFrom`/`radioTo`): il senso della
+            // Tab 3 è proprio mostrare quanto i metadati divergono dal testo. Usare `from`/`to`
+            // (già rettificati) annullerebbe la discrepanza che vogliamo far vedere.
+            textResolution() {
+                if (this._textRes) return this._textRes;
+                const res = [];
+                this.communications.forEach(c => {
+                    const tSend = c.textFrom, tRecv = c.textTo;
+                    if (tSend || tRecv) {
+                        const mism = (tSend && c.radioFrom && tSend !== c.radioFrom) ||
+                                     (tRecv && c.radioTo && tRecv !== c.radioTo);
+                        res.push({
+                            id: c.id, radioFrom: c.radioFrom, radioTo: c.radioTo,
+                            textFrom: tSend, textTo: tRecv, mismatch: mism,
+                            canon: c.canon, content: c.content
+                        });
+                    }
+                });
+                return (this._textRes = res);
+            },
+
+            // Matrici di confusione radio↔testo (mittente e destinatario), come la tesi
+            radioCrosstab() {
+                const res = this.textResolution();
+                const build = (getR, getT) => {
+                    const pairs = {}, rTot = {}, cTot = {};
+                    res.forEach(r => {
+                        const a = getR(r), b = getT(r);
+                        if (a && b) { pairs[a + '|' + b] = (pairs[a + '|' + b] || 0) + 1; rTot[a] = (rTot[a] || 0) + 1; cTot[b] = (cTot[b] || 0) + 1; }
+                    });
+                    return {
+                        pairs,
+                        rows: Object.keys(rTot).sort((x, y) => rTot[y] - rTot[x]).slice(0, 15),
+                        cols: Object.keys(cTot).sort((x, y) => cTot[y] - cTot[x]).slice(0, 15)
+                    };
+                };
+                return { send: build(r => r.radioFrom, r => r.textFrom), recv: build(r => r.radioTo, r => r.textTo) };
+            },
+
+            // Relazioni tipizzate di un'entità (aggregando i tipi verso lo stesso vicino)
+            relationshipsOf(id) {
+                const agg = {};
+                (this.entityEdges[id] || []).forEach(e => {
+                    if (e.other === id) return;
+                    if (!agg[e.other]) agg[e.other] = { other: e.other, types: new Set(), inferred: true };
+                    agg[e.other].types.add(e.type);
+                    if (!e.inferred) agg[e.other].inferred = false;
+                });
+                return Object.values(agg).map(a => ({ other: a.other, types: [...a.types], inferred: a.inferred }));
+            },
+
+            // --- TASK 4: DOSSIER — capi d'accusa come regole trasparenti sul testo ---
+            // Ogni regola è un elenco di frasi cercate nei `content`: la dashboard evidenzia
+            // la frase trovata, così l'accusa resta verificabile dal lettore (niente etichette a mano).
+            ACCUSE: [
+                {
+                    id: 'destroy', label: 'Distruzione di prove', color: '#d55e00',
+                    src: "destroy all related documentation|documentation destruction|clean paper trail"
+                },
+                {
+                    id: 'bribe', label: 'Corruzione & favori', color: '#cc79a7',
+                    src: "double your usual fee|usual fee|called in favors|favors at the permit office|sign off within hours|remains cooperative|bring payment|payment protocols"
+                },
+                {
+                    id: 'cover', label: 'Depistaggio & false dichiarazioni', color: '#e69f00',
+                    src: "i've redirected|redirected them|redirected [a-z' ]{0,20}attention|suspects nothing|nothing to be concerned about|wasn't aware of any permit approvals|scheduling conflicts|new patrol schedules|temporary diversions"
+                },
+                {
+                    id: 'hide', label: "Occultamento dell'operazione", color: '#0072b2',
+                    src: "stay under radar|under the radar|tourism facade|tourism appearance|encrypted protocols|maintain confidentiality|alternative channels|alternate financial channels|delta-3 protocols"
+                },
+                {
+                    id: 'build', label: 'Costruzione illecita a Nemo Reef', color: '#009e73',
+                    src: "underwater foundation work|foundation work|permanent underwater construction|permanent structures|concrete forms|underwater lighting|heavy equipment"
+                }
+            ],
+            accusaById(id) { return this.ACCUSE.find(a => a.id === id) || { label: id, color: '#94a3b8' }; },
+
+            // --- "Eventi di corruzione": tassonomia keyword più granulare dei capi d'accusa (~10 categorie),
+            // usata dalla timeline degli eventi (conteggio giornaliero per categoria). Ogni regola è trasparente
+            // e calibrata sui `content` reali. Un messaggio può ricadere in più categorie.
+            CORRUPTION_EVENTS: [
+                { id: 'permits',        label: 'Gestione permessi',            color: '#f28e2c', src: "permit|clearance|approval|authoriz|sign off|CR-7844" },
+                { id: 'intermediaries', label: 'Uso di intermediari',          color: '#76b7b2', src: "middleman|intermediar|on behalf|go-between|proxy" },
+                { id: 'unauthorized',   label: 'Accessi non autorizzati',      color: '#9c755f', src: "unauthorized|illegal(?:ly)?|trespass|without (?:proper )?(?:a )?(?:permit|authorization|clearance)" },
+                { id: 'payments',       label: 'Pagamenti illeciti & tangenti', color: '#af7aa1', src: "payment|\\bfee\\b|bribe|kickback|\\bcash\\b|financial compensation" },
+                { id: 'suspicious',     label: 'Attività sospetta',            color: '#59a14f', src: "suspicious|nothing to be concerned|cover up|covering up|raise(?:s|d)? (?:questions|suspicion)" },
+                { id: 'confidentiality',label: 'Abuso di riservatezza',        color: '#4e79a7', src: "confidential|discreet|off the record|encrypted|keep (?:this|it) (?:quiet|confidential|between)" },
+                { id: 'destruction',    label: 'Distruzione di documenti',     color: '#e15759', src: "destroy|shred|\\bdelete\\b|erase|documentation destruction|clean paper trail|purge (?:records|files)" },
+                { id: 'special_access', label: 'Accessi speciali',             color: '#b07aa1', src: "special access|restricted access|access granted|granted access|clearance to enter" },
+                { id: 'favoritism',     label: 'Favoritismi',                  color: '#8cd17d', src: "favor|cooperative|owe (?:you|me|him|her)|return the favor|called in favors" },
+                { id: 'laundering',     label: 'Riciclaggio',                  color: '#e377c2', src: "launder|money laundering|alternative (?:financial )?channels|alternate financial channels|offshore|shell (?:company|account)" }
+            ],
+            corruptionEventById(id) { return this.CORRUPTION_EVENTS.find(c => c.id === id) || { id, label: id, color: '#94a3b8' }; },
+            // Categorie di corruzione ("nuovi topic") che un testo aggancia. Regex precompilate una volta sola.
+            corruptionEventsOf(content) {
+                if (!this._ceRe) this._ceRe = this.CORRUPTION_EVENTS.map(c => ({ id: c.id, re: new RegExp(c.src, 'i') }));
+                const txt = content || '';
+                return this._ceRe.filter(c => c.re.test(txt)).map(c => c.id);
+            },
+
+            // Regex "parlano di lui": il nome del target compare nel TESTO del messaggio (whole-word).
+            // Persone → nome completo O singoli token distintivi (≥4 lettere, non presenti nel nome di
+            // un'altra entità della rete: "Nadia" e "Conti" sì, un token condiviso no). Pseudonimi → solo
+            // il nome completo esatto ("Mrs. Money": il token "money" da solo aggancerebbe mezzo dataset).
+            // Regola trasparente al posto del campo `mentions` precalcolato, troppo conservativo:
+            // per Nadia trovava 5 messaggi indiretti contro i 15 che la nominano davvero.
+            aboutRegex(target) {
+                const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const parts = [esc(target)];
+                if (!this.isPseudonym(target)) {
+                    const others = (this.participants || []).map(p => p.name).filter(n => n && n !== target);
+                    target.split(/\s+/)
+                        .map(t => t.replace(/[^\w]/g, ''))
+                        .filter(t => t.length >= 4 && !/^(the|mrs|miss|mister)$/i.test(t))
+                        .filter(t => !others.some(o => new RegExp('\\b' + esc(t) + '\\b', 'i').test(o)))
+                        .forEach(t => parts.push(esc(t)));
+                }
+                return new RegExp('\\b(?:' + parts.join('|') + ')\\b', 'i');
+            },
+
+            // Tutte le comunicazioni che coinvolgono il target (inviate/ricevute) o che parlano di lui
+            // ("about": il suo nome compare nel testo, vedi aboutRegex), ciascuna con i capi d'accusa
+            // attivati e le frasi trovate.
+            // L'attribuzione mittente/destinatario è già quella rettificata (vedi init): qui si usa
+            // `from`/`to` e basta. L'inclusione segue l'attribuzione FINALE, non quella radio: se il
+            // preambolo dice che il destinatario è V. Miesel Shipping e non Nadia, quel messaggio esce
+            // dal suo fascicolo (e resta al più tra i "parlano di lei").
+            dossier(target) {
+                const msgs = [];
+                const reAbout = this.aboutRegex(target);
+                this.communications.forEach(c => {
+                    const involved = (c.from === target || c.to === target);
+                    const isAbout = !involved && reAbout.test(c.content || '');
+                    if (!involved && !isAbout) return;
+
+                    const tags = [], hits = [];
+                    this.ACCUSE.forEach(a => {
+                        const found = (c.content || '').match(new RegExp(a.src, 'gi'));
+                        if (found && found.length) { tags.push(a.id); hits.push(...found); }
+                    });
+                    msgs.push({
+                        id: c.id, ts: c.timestamp, date: c.date, hour: c.hour,
+                        from: c.from, to: c.to,
+                        radioFrom: c.radioFrom, radioTo: c.radioTo,
+                        textFrom: c.textFrom, textTo: c.textTo,
+                        corrected: c.corrected, uncertain: false,
+                        topic: c.topic, content: c.content,
+                        events: this.corruptionEventsOf(c.content),   // "nuovi topic": categorie di corruzione
+                        dir: isAbout ? 'about' : ((c.from === target) ? 'sent' : 'recv'),
+                        tags, hits: [...new Set(hits)]
+                    });
+                });
+                msgs.sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
+
+                // Complici = controparti dei messaggi incriminanti + pseudonimi nominati nel testo
+                const complici = new Set();
+                msgs.forEach(m => {
+                    if (!m.tags.length) return;
+                    [m.from, m.to].forEach(x => { if (x && x !== target) complici.add(x); });
+                });
+                msgs.forEach(m => this.pseudonyms.forEach(p => {
+                    if (p !== target && (m.content || '').includes(p)) complici.add(p);
+                }));
+
+                const counts = {};
+                this.ACCUSE.forEach(a => { counts[a.id] = msgs.filter(m => m.tags.includes(a.id)).length; });
+
+                // Contatti del target: volume, messaggi incriminanti e messaggi ad attribuzione incerta
+                const contacts = {};
+                msgs.forEach(m => {
+                    if (m.dir === 'about') return;
+                    const other = (m.dir === 'sent') ? m.to : m.from;
+                    if (!other || other === target) return;
+                    const k = (contacts[other] = contacts[other] || { id: other, msgs: 0, flagged: 0, uncertain: 0 });
+                    k.msgs++;
+                    if (m.tags.length) k.flagged++;
+                    if (m.uncertain) k.uncertain++;
+                });
+
+                return {
+                    msgs, contacts, counts,
+                    total: msgs.length,
+                    flagged: msgs.filter(m => m.tags.length).length,
+                    uncertain: msgs.filter(m => m.uncertain).length,
+                    corrected: msgs.filter(m => m.corrected).length,
+                    complici: [...complici].sort(),
+                    topTopic: this.corruptionEventById(d3.greatest(
+                        d3.rollups(msgs.flatMap(m => m.events), v => v.length, e => e),
+                        d => d[1])?.[0]).label
+                };
+            },
+
+            // Task 1c — "chi influenza il target" via PRECEDENZA TEMPORALE (attribuzione rettificata).
+            // Entrata: X scrive AL target e poco dopo (entro deltaMin, stesso giorno) il target reagisce
+            //          scrivendo a sua volta → X può dettare l'agenda del target (possibile mandante).
+            // Uscita:  il target scrive a X e X reagisce entro deltaMin → il target precede X.
+            // Ogni conteggio è una catena trigger→risposta verificabile (clic → messaggi).
+            influence(target, deltaMin) {
+                const empty = { incoming: [], outgoing: [], maxInc: 1, maxOut: 1, target: target || null };
+                if (!target) return empty;
+                const win = (deltaMin || 60) * 60000;
+                const msgs = this.communications
+                    .filter(m => m.timestamp && m.from && m.to)
+                    .map(m => ({ ...m, t: new Date(m.timestamp.replace(' ', 'T')).getTime() }))
+                    .filter(m => !isNaN(m.t))
+                    .sort((a, b) => a.t - b.t);
+                const tSpeaks = msgs.filter(m => m.from === target);
+                const inc = {}, out = {};
+                msgs.forEach(m1 => {
+                    if (m1.to !== target || m1.from === target) return;
+                    const resp = tSpeaks.find(m2 => m2.t > m1.t && m2.t - m1.t <= win && m2.date === m1.date);
+                    if (resp) (inc[m1.from] = inc[m1.from] || []).push({ trigger: m1, response: resp });
+                });
+                msgs.forEach(m1 => {
+                    if (m1.from !== target || m1.to === target) return;
+                    const x = m1.to;
+                    const resp = msgs.find(m2 => m2.from === x && m2.t > m1.t && m2.t - m1.t <= win && m2.date === m1.date);
+                    if (resp) (out[x] = out[x] || []).push({ trigger: m1, response: resp });
+                });
+                const rank = obj => Object.entries(obj)
+                    .map(([name, chains]) => ({ name, count: chains.length, chains }))
+                    .sort((a, b) => b.count - a.count);
+                const incoming = rank(inc), outgoing = rank(out);
+                return {
+                    incoming, outgoing, target,
+                    maxInc: d3.max(incoming, r => r.count) || 1,
+                    maxOut: d3.max(outgoing, r => r.count) || 1
+                };
+            },
+
+            participantColor(name) {
+                return this.participantColorScale ? this.participantColorScale(name) : '#94a3b8';
+            },
+
+            // Etichetta rappresentativa di una community = membro col grado più alto
+            communityLabel(comm) {
+                const top = comm.members.slice().sort((a, b) => (b.degree || 0) - (a.degree || 0))[0];
+                return top ? top.name : ('Community ' + comm.id);
+            },
+
+            // Dominio date pulito (span principale ottobre 2040)
+            dateDomain() {
+                const s = new Set(this.communications
+                    .filter(c => c.date && c.date.startsWith('2040') && c.hour >= 0)
+                    .map(c => c.date));
+                return Array.from(s).sort();
+            },
+
+            // Comunicazioni valide per la heatmap (eventualmente filtrate alla notte)
+            heatmapMessages(nightOnly) {
+                return this.communications.filter(c =>
+                    c.date && c.date.startsWith('2040') && c.hour >= 0 &&
+                    (!nightOnly || this.NIGHT_HOURS.includes(c.hour)));
+            }
+        };
+
+        // ==========================================
+        // 1. MOTORE D3.JS (Logica di Visualizzazione — dati reali)
+        // ==========================================
+        const D3Charts = {
+            // Colore = fazione di comunicazione (`comm_group`, Louvain sull'attribuzione RETTIFICATA):
+            // la stessa usata dalla Tab 2, così le due tab colorano le entità nello stesso modo.
+            entityColor(name) {
+                const e = DataModel.nodeById[name];
+                const g = e ? e.comm_group : undefined;
+                if (g === undefined || g === null || g < 0) return '#94a3b8';
+                return D3Charts.groupColor(g);
+            },
+
+            // Colore per gruppo di comunicazione (stabile: id -> colore)
+            groupColor(id) { return d3.scaleOrdinal(d3.schemeTableau10).domain(d3.range(12))(id); },
+
+            // Codifica per TIPO di entità (mittente/destinatario dei messaggi)
+            TYPE_STYLE: {
+                Person:       { color: '#0072B2', sym: d3.symbolCircle,   label: 'Persona' },
+                Vessel:       { color: '#E69F00', sym: d3.symbolTriangle, label: 'Imbarcazione' },
+                Organization: { color: '#009E73', sym: d3.symbolSquare,   label: 'Organizzazione' },
+                Location:     { color: '#CC79A7', sym: d3.symbolDiamond,  label: 'Luogo' },
+                Group:        { color: '#D55E00', sym: d3.symbolWye,      label: 'Gruppo' }
+            },
+            entityType(name) { const e = DataModel.nodeById[name]; return e ? (e.sub_type || '?') : '?'; },
+            typeStyle(name) { return this.TYPE_STYLE[this.entityType(name)] || { color: '#94a3b8', sym: d3.symbolCross, label: 'Altro' }; },
+            typeColor(name) { return this.typeStyle(name).color; },
+            initials(name) {
+                if (!name) return '?';
+                const w = name.replace(/["'.]/g, '').split(/\s+/).filter(Boolean);
+                return (w.length >= 2 ? (w[0][0] + w[1][0]) : name.slice(0, 2)).toUpperCase();
+            },
+            initial1(name) { return name ? name.replace(/["'.]/g, '').trim().charAt(0).toUpperCase() : '?'; },
+            textOn(bg) { try { return d3.hcl(bg).l > 65 ? '#1e293b' : '#ffffff'; } catch (e) { return '#fff'; } },
+
+            // --- TAB 1: HEATMAP giorno x ora (comunicazioni reali) ---
+            renderHeatmap(filters) {
+                const container = document.getElementById('chart-heatmap');
+                if (!container) return;
+                d3.select('#chart-heatmap').selectAll("*").remove();
+
+                const margin = { top: 40, right: 30, bottom: 24, left: 70 };
+                const width = container.clientWidth - margin.left - margin.right;
+                const height = container.clientHeight - margin.top - margin.bottom;
+
+                const svg = d3.select('#chart-heatmap').append('svg')
+                    .attr('width', '100%').attr('height', '100%')
+                    .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+                const dates = DataModel.dateDomain();
+                // Fascia oraria operativa: solo 08:00–15:00 (le comunicazioni avvengono solo di giorno)
+                const HOUR_START = 8, HOUR_END = 15;
+                const hours = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => `${(i + HOUR_START).toString().padStart(2, '0')}:00`);
+                const dayLabel = d => 'Oct ' + parseInt(d.slice(8, 10), 10);
+
+                const x = d3.scaleBand().range([0, width]).domain(hours).padding(0.1);
+                const y = d3.scaleBand().range([0, height]).domain(dates).padding(0.2);
+
+                // Griglia orizzontale
+                dates.forEach(d => {
+                    svg.append("line")
+                        .attr("x1", 0).attr("x2", width)
+                        .attr("y1", y(d) + y.bandwidth() + 2).attr("y2", y(d) + y.bandwidth() + 2)
+                        .attr("stroke", "#e2e8f0").attr("stroke-width", 1);
+                });
+
+                // Assi
+                svg.append("g").call(d3.axisTop(x).tickSize(0)).selectAll("text")
+                    .style("text-anchor", "middle").style("font-size", "12px").style("font-weight", "500").style("fill", "#475569");
+                svg.selectAll(".domain").remove();
+                svg.append("g").call(d3.axisLeft(y).tickSize(0).tickFormat(dayLabel)).selectAll("text")
+                    .style("font-weight", "500").style("fill", "#334155").style("font-size", "11px");
+                svg.selectAll(".domain").remove();
+
+                const sel = filters.selectedUsers || [];
+                const topic = (filters.selectedTopic === undefined) ? null : filters.selectedTopic;
+                const inTopic = m => topic === null || m.topic === topic;
+                // Se è attivo un target nel pannello "chi influenza chi", la mappa tiene solo i suoi messaggi.
+                const infT = this.influenceTarget || null;
+                const msgs = DataModel.heatmapMessages(false)
+                    .filter(m => m.hour >= HOUR_START && m.hour <= HOUR_END)
+                    .filter(m => sel.length === 0 || sel.includes(m.from) || sel.includes(m.to))
+                    .filter(m => !infT || m.from === infT || m.to === infT);
+
+                // Messaggi raggruppati per cella (usato da entrambe le viste)
+                const cellMsgs = {};
+                msgs.forEach(m => {
+                    const h = m.hour.toString().padStart(2, '0') + ':00';
+                    const key = m.date + '|' + h;
+                    (cellMsgs[key] = cellMsgs[key] || []).push({ ...m, hourStr: h });
+                });
+                const countData = Object.entries(cellMsgs).map(([key, list]) => {
+                    const [d, h] = key.split('|'); return { day: d, hour: h, count: list.length, msgs: list };
+                });
+
+                if (filters.isAggregated) {
+                    // --- VISTA AGGREGATA (volume per cella) ---
+                    // Con un topic selezionato la panoramica mostra SOLO i messaggi di quel topic:
+                    // conteggio, colore e tooltip riflettono il topic; le celle senza si spengono.
+                    countData.forEach(d => { d.topicCount = d.msgs.filter(inTopic).length; });
+                    const useTopic = topic !== null;
+                    const disp = d => useTopic ? d.topicCount : d.count;
+                    const maxCount = d3.max(countData, disp) || 1;
+                    const colorScale = d3.scaleSequential(d3.interpolateBlues).domain([0, maxCount + 2]);
+
+                    svg.selectAll(".agg-cell").data(countData).enter().append("rect")
+                        .attr("class", "agg-cell")
+                        .attr("x", d => x(d.hour)).attr("y", d => y(d.day) + 2)
+                        .attr("width", x.bandwidth()).attr("height", Math.max(y.bandwidth() - 4, 1))
+                        .attr("fill", d => disp(d) ? colorScale(disp(d)) : '#f1f5f9').attr("rx", 3)
+                        .style("opacity", d => (useTopic && d.topicCount === 0) ? 0.15 : 1)
+                        .on("mouseover", (e, d) => {
+                            const list = useTopic ? d.msgs.filter(inTopic) : d.msgs;
+                            const cap = 18;
+                            const rows = list.slice(0, cap).map(m =>
+                                `<div style="white-space:nowrap"><b style="color:${D3Charts.typeColor(m.from)}">${m.from || '—'}</b>` +
+                                ` <span style="color:#94a3b8">→</span> <b style="color:${D3Charts.typeColor(m.to)}">${m.to || '—'}</b></div>`).join('');
+                            const more = list.length > cap ? `<div style="color:#94a3b8;margin-top:3px">… +${list.length - cap} altri</div>` : '';
+                            showTooltip(e, `<div style="max-width:280px"><div style="color:#64748b;font-size:10px;border-bottom:1px solid #e2e8f0;padding-bottom:4px;margin-bottom:6px">` +
+                                `${dayLabel(d.day)}, ${d.hour} · <b style="color:#2563eb">${disp(d)} messaggi</b>${useTopic ? ' · ' + DataModel.topicLabel(topic) : ''}</div>${rows}${more}</div>`);
+                            d3.select(e.currentTarget).attr("stroke", "#1e293b").attr("stroke-width", 2);
+                        })
+                        .on("mouseout", e => { hideTooltip(); d3.select(e.currentTarget).attr("stroke", "none"); });
+
+                    // Numero esatto centrato in ogni cella (0 non mostrato)
+                    svg.selectAll(".agg-count").data(countData).enter().append("text")
+                        .attr("class", "agg-count")
+                        .attr("x", d => x(d.hour) + x.bandwidth() / 2)
+                        .attr("y", d => y(d.day) + 2 + y.bandwidth() / 2)
+                        .attr("dy", "0.35em").attr("text-anchor", "middle")
+                        .style("pointer-events", "none").style("font-size", "10px").style("font-weight", "700")
+                        .style("fill", d => disp(d) > maxCount * 0.5 ? "#fff" : "#1e293b")
+                        .text(d => disp(d) || '');
+
+                } else {
+                    // --- VISTA DETTAGLIATA (un marcatore per messaggio: colore = tipo mittente/destinatario) ---
+                    const gap = 1.5, cellW = x.bandwidth(), cellH = y.bandwidth();
+
+                    // Layout per-cella: i marcatori sono grandi dove ci sono pochi messaggi,
+                    // e si rimpiccioliscono nelle celle affollate finché entrano TUTTI.
+                    const cellLayout = {};
+                    countData.forEach(cd => {
+                        let box = 15;
+                        for (let b = 15; b >= 3; b -= 0.5) {
+                            const c = Math.max(1, Math.floor((cellW + gap) / (b + gap)));
+                            const r = Math.max(1, Math.floor((cellH + gap) / (b + gap)));
+                            box = b;
+                            if (c * r >= cd.count) break;
+                        }
+                        cellLayout[cd.day + '|' + cd.hour] = { box, cols: Math.max(1, Math.floor((cellW + gap) / (box + gap))) };
+                    });
+
+                    const cellIdx = {};
+                    const data = msgs.map(m => {
+                        const hourStr = m.hour.toString().padStart(2, '0') + ':00';
+                        const key = m.date + '|' + hourStr;
+                        const localIndex = (cellIdx[key] = (cellIdx[key] === undefined ? 0 : cellIdx[key] + 1));
+                        return { ...m, hourStr, localIndex, L: cellLayout[key] };
+                    });
+
+                    const msgGroups = svg.selectAll(".msg-group").data(data).enter().append("g")
+                        .attr("class", "msg-group")
+                        .attr("transform", d => {
+                            const offsetX = (d.localIndex % d.L.cols) * (d.L.box + gap);
+                            const offsetY = Math.floor(d.localIndex / d.L.cols) * (d.L.box + gap);
+                            return `translate(${x(d.hourStr) + offsetX}, ${y(d.date) + offsetY})`;
+                        })
+                        .style("cursor", "pointer")
+                        .style("opacity", d => inTopic(d) ? 1 : 0.1)
+                        .on("mouseover", (e, d) => {
+                            const html = `
+                                <div style="text-align:left; max-width: 300px; line-height: 1.45;">
+                                    <div style="color:#64748b; font-size:10px; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-bottom:6px;">
+                                        Comunicazione · ${d.timestamp}
+                                    </div>
+                                    <div style="margin-bottom:2px">
+                                        <b style="color:${D3Charts.typeColor(d.from)}">${d.from || '—'}</b>
+                                        <span style="color:#94a3b8">(${D3Charts.typeStyle(d.from).label})</span>
+                                        <span style="color:#94a3b8">→</span>
+                                        <b style="color:${D3Charts.typeColor(d.to)}">${d.to || '—'}</b>
+                                        <span style="color:#94a3b8">(${D3Charts.typeStyle(d.to).label})</span>
+                                    </div>
+                                    <div style="margin-top:6px; margin-bottom:4px;">
+                                        <span style="font-size:10px; background:#fef3c7; color:#92400e; padding:1px 6px; border-radius:10px;">${d.topic >= 0 ? DataModel.topicLabel(d.topic) : 'Nessun topic'}</span>
+                                    </div>
+                                    <div style="font-size:11px; background:#f8fafc; padding:6px; border-radius:4px; color:#334155;">${d.content || '(nessun testo)'}</div>
+                                </div>`;
+                            showTooltip(e, html);
+                            d3.select(e.currentTarget).select(".mk").attr("stroke", "#1e293b").attr("stroke-width", 1.5);
+                        })
+                        .on("mouseout", e => { hideTooltip(); d3.select(e.currentTarget).select(".mk").attr("stroke", "#fff").attr("stroke-width", 0.6); });
+
+                    // Forma UNICA per tutti i messaggi. Colore = TIPO, divisione ORIZZONTALE:
+                    // metà sopra = destinatario, metà sotto = mittente. Le due metà sono a
+                    // spigolo vivo così si toccano senza stacco; la cornice esterna arrotonda il tutto.
+                    msgGroups.append("rect")
+                        .attr("x", 0).attr("y", 0).attr("width", d => d.L.box).attr("height", d => d.L.box / 2)
+                        .attr("fill", d => D3Charts.typeColor(d.to));
+                    msgGroups.append("rect")
+                        .attr("x", 0).attr("y", d => d.L.box / 2).attr("width", d => d.L.box).attr("height", d => d.L.box / 2)
+                        .attr("fill", d => D3Charts.typeColor(d.from));
+                    // Contorno unico (target dell'hover). Nessuna iniziale: solo colore = tipo.
+                    msgGroups.append("rect").attr("class", "mk")
+                        .attr("width", d => d.L.box).attr("height", d => d.L.box).attr("rx", 1)
+                        .attr("fill", "none").attr("stroke", "#fff").attr("stroke-width", 0.6);
+                }
+
+                // Evidenziazione di un messaggio scelto dal pannello "chi influenza chi":
+                // anello rosso sulla cella giorno×ora a cui appartiene (funziona in entrambe le viste).
+                const hid = this.highlightId;
+                if (hid) {
+                    const c = DataModel.communications.find(m => m.id === hid);
+                    if (c && c.hour >= HOUR_START && c.hour <= HOUR_END && dates.includes(c.date)) {
+                        const hStr = c.hour.toString().padStart(2, '0') + ':00';
+                        svg.append("rect")
+                            .attr("x", x(hStr) - 2).attr("y", y(c.date))
+                            .attr("width", x.bandwidth() + 4).attr("height", y.bandwidth())
+                            .attr("fill", "none").attr("stroke", "#dc2626").attr("stroke-width", 2.5).attr("rx", 4)
+                            .style("pointer-events", "none");
+                    }
+                }
+
+                // Nota di sintesi (la legenda tipi è ora HTML, sotto il grafico)
+                svg.append("text").attr("x", width).attr("y", height + 16).attr("text-anchor", "end")
+                    .style("font-size", "10px").style("fill", "#94a3b8")
+                    .text(`${msgs.length} comunicazioni${sel.length ? ' · filtro ' + sel.length + ' utenti' : ''}` +
+                          `${topic !== null ? ' · topic: ' + DataModel.topicLabel(topic) : ''} · picco ore 10:00`);
+            },
+
+            // --- TAB 2: RETE DI COMUNICAZIONE (nodi=entità, forma=tipo, colore=gruppo, archi=volume) ---
+            commSel: null, commSelGroup: null, commSuspicious: false, commPos: {},
+
+            initCommunity(filters) {
+                const container = document.getElementById('chart-community');
+                if (!container) return;
+                d3.select('#chart-community').selectAll("*").remove();
+
+                const width = container.clientWidth, height = container.clientHeight;
+                const svg = d3.select('#chart-community').append('svg')
+                    .attr('width', '100%').attr('height', '100%').attr('viewBox', [0, 0, width, height]);
+                const gHull = svg.append('g'), gLink = svg.append('g'), gNode = svg.append('g'), gLabel = svg.append('g');
+
+                const { nodes, links, groups } = DataModel.commNetwork();
+                nodes.forEach(n => n.suspicious = DataModel.isPseudonym(n.name));
+
+                // Centri dei gruppi disposti su un cerchio (separazione visiva)
+                const cx = width / 2, cy = height / 2, R = Math.min(width, height) * 0.34;
+                const gc = { '-1': { x: cx, y: cy } };
+                groups.forEach((g, i) => {
+                    const a = (i / groups.length) * 2 * Math.PI - Math.PI / 2;
+                    gc[g.id] = { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) };
+                });
+
+                const rScale = d3.scaleSqrt().domain([1, d3.max(nodes, n => n.degree) || 1]).range([5, 22]);
+                nodes.forEach(n => { n.r = rScale(n.degree); const c = this.commPos[n.id]; if (c) { n.x = c.x; n.y = c.y; } });
+                const lwScale = d3.scaleSqrt().domain([1, d3.max(links, l => l.weight) || 1]).range([0.6, 6]);
+
+                // Archi
+                const link = gLink.selectAll('line').data(links).enter().append('line')
+                    .attr('stroke', '#94a3b8').attr('stroke-opacity', 0.28)
+                    .attr('stroke-width', d => lwScale(d.weight))
+                    .on('mouseover', (e, d) => showTooltip(e, `<b>${d.source.name || d.source}</b> ↔ <b>${d.target.name || d.target}</b><br>${d.weight} messaggi`))
+                    .on('mouseout', hideTooltip);
+
+                // Nodi (forma = tipo, colore = gruppo)
+                const node = gNode.selectAll('path').data(nodes).enter().append('path')
+                    .attr('class', 'comm-node')
+                    .attr('d', d => d3.symbol().type((D3Charts.TYPE_STYLE[d.type] || {}).sym || d3.symbolCircle).size(d.r * d.r * 3)())
+                    .attr('fill', d => D3Charts.groupColor(d.group))
+                    .attr('stroke', d => d.suspicious ? '#ef4444' : '#fff')
+                    .attr('stroke-width', d => d.suspicious ? 2.5 : 1)
+                    .style('cursor', 'pointer')
+                    .on('mouseover', (e, d) => {
+                        const grp = groups.find(g => g.id === d.group);
+                        showTooltip(e, `<b>${d.name}</b><br>Tipo: ${D3Charts.typeStyle(d.name).label}<br>Gruppo: <b style="color:${D3Charts.groupColor(d.group)}">${grp ? grp.label : '—'}</b><br>Messaggi: ${d.degree}` +
+                            (d.suspicious ? `<br><span style="color:#ef4444;font-weight:bold">Pseudonimo sospetto</span>` : ''));
+                    })
+                    .on('mouseout', hideTooltip)
+                    .call(d3.drag()
+                        .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+                        .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+                        .on('end', (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+                // Etichette per i nodi principali
+                const label = gLabel.selectAll('text').data(nodes.filter(n => n.r >= 11)).enter().append('text')
+                    .text(d => d.name).attr('dx', d => d.r + 3).attr('dy', 3)
+                    .style('font-size', '10px').style('font-weight', '500').style('fill', '#334155').style('pointer-events', 'none');
+
+                // Etichette dei gruppi
+                const hullLabel = gLabel.selectAll('.grp-label').data(groups).enter().append('text')
+                    .attr('class', 'grp-label').text(d => d.label)
+                    .attr('text-anchor', 'middle').style('font-size', '12px').style('font-weight', '800')
+                    .style('fill', d => d3.color(D3Charts.groupColor(d.id)).darker(0.6)).style('pointer-events', 'none');
+
+                let hull = gHull.selectAll('path');
+                const hullData = groups.map(g => ({ id: g.id }));
+
+                const sim = d3.forceSimulation(nodes)
+                    .force('link', d3.forceLink(links).id(d => d.id).distance(d => 40 + 120 / (1 + d.weight)).strength(d => Math.min(1, d.weight / 10)))
+                    .force('charge', d3.forceManyBody().strength(-90))
+                    .force('collide', d3.forceCollide().radius(d => d.r + 4))
+                    .force('x', d3.forceX().x(d => gc[d.group].x).strength(0.22))
+                    .force('y', d3.forceY().y(d => gc[d.group].y).strength(0.22));
+
+                // Nessun nodo può uscire dal riquadro; memorizza la posizione per il prossimo render
+                const clamp = n => {
+                    n.x = Math.max(n.r + 2, Math.min(width - n.r - 2, n.x));
+                    n.y = Math.max(n.r + 14, Math.min(height - n.r - 2, n.y));
+                    D3Charts.commPos[n.id] = { x: n.x, y: n.y };
+                };
+
+                // Layout risolto in modo sincrono (come la Tab 4): verificabile nel browser interno e
+                // nessun ballonzolamento all'apertura. Il drag rimette in moto la simulazione, che continua
+                // a passare dal clamp nel tick.
+                for (let i = 0; i < 300; i++) { sim.tick(); nodes.forEach(clamp); }
+                sim.stop();
+
+                function ticked() {
+                    nodes.forEach(clamp);
+                    link.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+                    node.attr('transform', d => `translate(${d.x},${d.y})`);
+                    label.attr('transform', d => `translate(${d.x},${d.y})`);
+                    // Aloni convessi per gruppo
+                    hull = gHull.selectAll('path').data(hullData);
+                    hull = hull.enter().append('path').attr('class', 'grp-hull')
+                        .attr('fill', d => D3Charts.groupColor(d.id)).attr('stroke', d => D3Charts.groupColor(d.id))
+                        .attr('stroke-width', 18).attr('stroke-linejoin', 'round').style('opacity', 0.12)
+                        .style('pointer-events', 'none').merge(hull);
+                    hull.attr('d', g => {
+                        const pts = nodes.filter(n => n.group === g.id).map(n => [n.x, n.y]);
+                        if (pts.length < 3) return null;
+                        const h = d3.polygonHull(pts); return h ? 'M' + h.join('L') + 'Z' : null;
+                    });
+                    hullLabel.attr('transform', g => {
+                        const pts = nodes.filter(n => n.group === g.id);
+                        if (!pts.length) return 'translate(-999,-999)';
+                        const mx = d3.mean(pts, n => n.x), my = d3.min(pts, n => n.y) - 6;
+                        return `translate(${mx},${my})`;
+                    });
+                }
+                sim.on('tick', ticked);
+                ticked();   // disegna subito il layout già risolto
+
+                svg.on('click', () => D3Charts.highlightCommGroup(null));
+
+                this.commSel = { node, link, hull: () => gHull.selectAll('path'), hullLabel, label };
+                this.commSuspicious = filters.suspiciousOnly;
+                this.applyCommHighlight();
+            },
+
+            applyCommHighlight() {
+                const sel = this.commSel; if (!sel) return;
+                const gid = this.commSelGroup, sus = this.commSuspicious;
+                const visible = d => (gid === null || d.group === gid) && (!sus || d.suspicious);
+                sel.node.transition().duration(300).style('opacity', d => visible(d) ? 1 : 0.12);
+                sel.label.transition().duration(300).style('opacity', d => visible(d) ? 1 : 0.06);
+                sel.link.transition().duration(300).style('stroke-opacity', l => {
+                    const okG = gid === null || (l.source.group === gid && l.target.group === gid);
+                    return okG ? 0.28 : 0.03;
+                });
+                sel.hull().transition().duration(300).style('opacity', h => gid === null ? 0.12 : (h.id === gid ? 0.2 : 0.03));
+                sel.hullLabel.transition().duration(300).style('opacity', h => gid === null ? 0.9 : (h.id === gid ? 1 : 0.12));
+            },
+
+            highlightCommGroup(id) { this.commSelGroup = id; this.applyCommHighlight(); },
+
+            // --- TAB 2b: ESPLORAZIONE RETE (due grafi circolari) ---
+            netSelectCb: null,
+
+            renderNetworkExplore(selectedId) {
+                const nodes = DataModel.networkEntities();
+                const N = nodes.length;
+                const commLinks = DataModel.commNetwork().links; // {source,target,weight} con id stringa
+                this._drawCircular('chart-comm-circ', nodes, N, 'comm', commLinks, selectedId);
+                this._drawCircular('chart-rel-circ', nodes, N, 'rel', null, selectedId);
+            },
+
+            _drawCircular(containerId, nodes, N, mode, commLinks, selectedId) {
+                const container = document.getElementById(containerId);
+                if (!container) return;
+                d3.select('#' + containerId).selectAll('*').remove();
+                const width = container.clientWidth, height = container.clientHeight;
+                if (width < 10 || height < 10) return;
+                const svg = d3.select('#' + containerId).append('svg')
+                    .attr('width', '100%').attr('height', '100%').attr('viewBox', [0, 0, width, height]);
+                const cx = width / 2, cy = height / 2, radius = Math.min(width, height) / 2 - 80;
+
+                const pos = {};
+                nodes.forEach((n, i) => { const a = (i / N) * 2 * Math.PI - Math.PI / 2; pos[n.id] = { x: cx + radius * Math.cos(a), y: cy + radius * Math.sin(a), a }; });
+                const arc = (a, b) => `M${pos[a].x},${pos[a].y}Q${cx},${cy} ${pos[b].x},${pos[b].y}`;
+
+                const gEdge = svg.append('g'), gNode = svg.append('g'), gLabel = svg.append('g');
+
+                // Insieme dei nodi collegati al selezionato (per l'evidenziazione)
+                let connected = null;
+                if (selectedId) {
+                    connected = new Set([selectedId]);
+                    if (mode === 'comm') commLinks.forEach(l => { if (l.source === selectedId) connected.add(l.target); if (l.target === selectedId) connected.add(l.source); });
+                    else DataModel.relationshipsOf(selectedId).forEach(r => connected.add(r.other));
+                }
+
+                // --- Archi ---
+                if (mode === 'comm') {
+                    const lw = d3.scaleSqrt().domain([1, d3.max(commLinks, l => l.weight) || 1]).range([0.5, 5]);
+                    gEdge.selectAll('path').data(commLinks).enter().append('path')
+                        .attr('d', d => arc(d.source, d.target)).attr('fill', 'none').attr('stroke', '#475569')
+                        .attr('stroke-width', d => lw(d.weight))
+                        .attr('stroke-opacity', d => !selectedId ? 0.16 : ((d.source === selectedId || d.target === selectedId) ? 0.8 : 0.03))
+                        .on('mouseover', (e, d) => showTooltip(e, `<b>${DataModel.nodeById[d.source].name}</b> ↔ <b>${DataModel.nodeById[d.target].name}</b><br>${d.weight} messaggi`))
+                        .on('mouseout', hideTooltip);
+                } else if (selectedId) {
+                    const rels = DataModel.relationshipsOf(selectedId).filter(r => pos[r.other]);
+                    gEdge.selectAll('path').data(rels).enter().append('path')
+                        .attr('d', d => arc(selectedId, d.other)).attr('fill', 'none')
+                        .attr('stroke', d => d.inferred ? '#f59e0b' : '#10b981').attr('stroke-width', 1.6).attr('stroke-opacity', 0.85)
+                        .attr('stroke-dasharray', d => d.inferred ? '4,3' : null)
+                        .on('mouseover', (e, d) => showTooltip(e, `<b>${DataModel.nodeById[selectedId].name}</b> → <b>${DataModel.nodeById[d.other].name}</b><br>${d.types.join(', ')}${d.inferred ? ' <span style="color:#f59e0b">(dedotto)</span>' : ''}`))
+                        .on('mouseout', hideTooltip);
+                }
+
+                // --- Nodi (cerchio=nome reale, stella=pseudonimo; colore=tipo) ---
+                gNode.selectAll('path').data(nodes).enter().append('path')
+                    .attr('transform', d => `translate(${pos[d.id].x},${pos[d.id].y})`)
+                    .attr('d', d => d3.symbol().type(d.pseudonym ? d3.symbolStar : d3.symbolCircle).size(d.id === selectedId ? 150 : 66)())
+                    .attr('fill', d => D3Charts.typeColor(d.id))
+                    .attr('stroke', d => d.id === selectedId ? '#1e293b' : '#fff').attr('stroke-width', d => d.id === selectedId ? 2 : 0.8)
+                    .style('opacity', d => (!selectedId || connected.has(d.id)) ? 1 : 0.18)
+                    .style('cursor', 'pointer')
+                    .on('mouseover', (e, d) => {
+                        const grp = DataModel.commGroups.find(g => (DataModel.nodeById[d.id] || {}).comm_group === g.id);
+                        showTooltip(e, `<b>${d.name}</b><br>Tipo: ${D3Charts.typeStyle(d.name).label}${d.pseudonym ? ' · <span style="color:#ef4444">pseudonimo</span>' : ''}${grp ? '<br>Gruppo: ' + grp.label : ''}`);
+                    })
+                    .on('mouseout', hideTooltip)
+                    .on('click', (e, d) => { e.stopPropagation(); if (D3Charts.netSelectCb) D3Charts.netSelectCb(d.id); });
+
+                // --- Etichette radiali ---
+                gLabel.selectAll('text').data(nodes).enter().append('text')
+                    .attr('transform', d => {
+                        const p = pos[d.id], lr = radius + 8, lx = cx + lr * Math.cos(p.a), ly = cy + lr * Math.sin(p.a);
+                        const rot = p.a * 180 / Math.PI, flip = Math.cos(p.a) < 0;
+                        return `translate(${lx},${ly}) rotate(${flip ? rot + 180 : rot})`;
+                    })
+                    .attr('text-anchor', d => Math.cos(pos[d.id].a) < 0 ? 'end' : 'start').attr('dy', '0.32em')
+                    .text(d => d.name.length > 13 ? d.name.slice(0, 12) + '…' : d.name)
+                    .style('font-size', '8px').style('pointer-events', 'none')
+                    .style('fill', d => (!selectedId || connected.has(d.id)) ? '#334155' : '#cbd5e1')
+                    .style('font-weight', d => d.id === selectedId ? '700' : '400');
+
+                svg.on('click', () => { if (D3Charts.netSelectCb) D3Charts.netSelectCb(null); });
+            },
+
+            // --- TAB 3: SIMILARITY HEATMAP (pseudonimo × entità) ---
+            renderSimHeatmap() {
+                const container = document.getElementById('chart-simheat');
+                if (!container) return;
+                d3.select('#chart-simheat').selectAll('*').remove();
+                const width = container.clientWidth, height = container.clientHeight;
+                if (width < 10 || height < 10) return;
+
+                const { pseudos, cols: colsAll, cells, colMax } = DataModel.similarityMatrix();
+                const cols = colsAll.slice(0, 22);   // top 22 per leggibilità (evita sovrapposizione etichette)
+                const margin = { top: 118, right: 16, bottom: 16, left: 110 };
+                const iw = width - margin.left - margin.right, ih = height - margin.top - margin.bottom;
+                const svg = d3.select('#chart-simheat').append('svg').attr('width', '100%').attr('height', '100%')
+                    .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+                const x = d3.scaleBand().domain(cols).range([0, iw]).padding(0.06);
+                const y = d3.scaleBand().domain(pseudos).range([0, ih]).padding(0.1);
+                const maxS = d3.max(pseudos, p => d3.max(cols, e => (cells[p + '|' + e] || {}).score || 0)) || 1;
+                const color = d3.scaleSequential(d3.interpolateReds).domain([0, maxS]);
+                const rowBest = {};
+                pseudos.forEach(p => { rowBest[p] = d3.max(cols, e => (cells[p + '|' + e] || {}).score || 0); });
+
+                const data = [];
+                pseudos.forEach(p => cols.forEach(e => { const s = cells[p + '|' + e]; if (s) data.push({ p, e, ...s }); }));
+                svg.selectAll('rect').data(data).enter().append('rect')
+                    .attr('x', d => x(d.e)).attr('y', d => y(d.p)).attr('width', x.bandwidth()).attr('height', y.bandwidth()).attr('rx', 1)
+                    .attr('fill', d => color(d.score))
+                    .attr('stroke', d => (d.score === rowBest[d.p] && d.score > 0.35) ? '#1e293b' : '#fff').attr('stroke-width', d => (d.score === rowBest[d.p] && d.score > 0.35) ? 1.6 : 0.3)
+                    .on('mouseover', (ev, d) => {
+                        d3.select(ev.currentTarget).attr('stroke', '#0ea5e9').attr('stroke-width', 2);
+                        showTooltip(ev, `<b>${d.p}</b> ≈ <b>${d.e}</b> <span style="color:#64748b">(${D3Charts.typeStyle(d.e).label})</span><br>` +
+                            `Similarità: <b style="color:#b91c1c">${Math.round(d.score * 100)}%</b><br>` +
+                            `<span style="color:#64748b">contatti ${Math.round(d.c * 100)}% · topic ${Math.round(d.t * 100)}% · orario ${Math.round(d.h * 100)}%</span>`);
+                    })
+                    .on('mouseout', (ev, d) => {
+                        hideTooltip();
+                        d3.select(ev.currentTarget).attr('stroke', (d.score === rowBest[d.p] && d.score > 0.35) ? '#1e293b' : '#fff').attr('stroke-width', (d.score === rowBest[d.p] && d.score > 0.35) ? 1.6 : 0.3);
+                    });
+
+                // Etichette colonne (entità) verticali per evitare sovrapposizioni
+                svg.append('g').selectAll('text').data(cols).enter().append('text')
+                    .attr('transform', d => `translate(${x(d) + x.bandwidth() / 2 + 3}, -6) rotate(-90)`)
+                    .attr('text-anchor', 'start').style('font-size', '9px')
+                    .style('font-weight', d => DataModel.isPseudonym(d) ? '700' : '400')
+                    .style('fill', d => DataModel.isPseudonym(d) ? '#b91c1c' : '#475569')
+                    .text(d => d.length > 15 ? d.slice(0, 14) + '…' : d);
+
+                // Etichette righe (pseudonimi)
+                svg.append('g').selectAll('text').data(pseudos).enter().append('text')
+                    .attr('x', -8).attr('y', d => y(d) + y.bandwidth() / 2).attr('dy', '0.32em').attr('text-anchor', 'end')
+                    .style('font-size', '11px').style('font-weight', '700').style('fill', '#b91c1c').text(d => d);
+            },
+
+            // --- TAB 3: MATRICI DI CONFUSIONE RADIO ↔ TESTO (come la tesi Fig 6.11/6.12) ---
+            renderRadioHeatmaps() {
+                const X = DataModel.radioCrosstab();
+                this._drawConfusion('chart-radioheat-send', X.send);
+                this._drawConfusion('chart-radioheat-recv', X.recv);
+            },
+            _drawConfusion(id, data) {
+                const container = document.getElementById(id);
+                if (!container) return;
+                d3.select('#' + id).selectAll('*').remove();
+                const w = container.clientWidth, h = container.clientHeight;
+                if (w < 10 || h < 10) return;
+                if (!data.rows.length) {
+                    d3.select('#' + id).append('div').attr('class', 'w-full h-full flex items-center justify-center text-xs text-slate-400').text('Nessun dato estratto');
+                    return;
+                }
+                const margin = { top: 92, right: 10, bottom: 10, left: 100 };
+                const iw = w - margin.left - margin.right, ih = h - margin.top - margin.bottom;
+                const svg = d3.select('#' + id).append('svg').attr('width', '100%').attr('height', '100%')
+                    .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+                const x = d3.scaleBand().domain(data.cols).range([0, iw]).padding(0.05);
+                const y = d3.scaleBand().domain(data.rows).range([0, ih]).padding(0.05);
+                const maxC = d3.max(Object.values(data.pairs)) || 1;
+                const color = d3.scaleSequential(d3.interpolateBlues).domain([0, maxC]);
+                const cells = [];
+                data.rows.forEach(r => data.cols.forEach(c => { const v = data.pairs[r + '|' + c] || 0; if (v) cells.push({ r, c, v, diag: r === c }); }));
+                svg.selectAll('rect').data(cells).enter().append('rect')
+                    .attr('x', d => x(d.c)).attr('y', d => y(d.r)).attr('width', x.bandwidth()).attr('height', y.bandwidth()).attr('rx', 1)
+                    .attr('fill', d => color(d.v))
+                    .attr('stroke', d => d.diag ? '#e2e8f0' : '#b91c1c').attr('stroke-width', d => d.diag ? 0.5 : 1.5)
+                    .on('mouseover', (e, d) => showTooltip(e, `radio <b>${d.r}</b> → testo <b>${d.c}</b>: <b>${d.v}</b>` + (d.diag ? '' : ' <span style="color:#b91c1c">(sostituzione)</span>')))
+                    .on('mouseout', hideTooltip);
+                svg.append('g').selectAll('text').data(data.cols).enter().append('text')
+                    .attr('transform', d => `translate(${x(d) + x.bandwidth() / 2 + 3}, -6) rotate(-90)`)
+                    .attr('text-anchor', 'start').style('font-size', '8px')
+                    .style('font-weight', d => DataModel.isPseudonym(d) ? '700' : '400')
+                    .style('fill', d => DataModel.isPseudonym(d) ? '#b91c1c' : '#475569')
+                    .text(d => d.length > 14 ? d.slice(0, 13) + '…' : d);
+                svg.append('g').selectAll('text').data(data.rows).enter().append('text')
+                    .attr('x', -6).attr('y', d => y(d) + y.bandwidth() / 2).attr('dy', '0.32em').attr('text-anchor', 'end')
+                    .style('font-size', '9px').style('fill', '#334155').text(d => d.length > 16 ? d.slice(0, 15) + '…' : d);
+            },
+
+            // --- TAB 3: SANKEY (flussi reali pseudonimi, bipartito mittente->destinatario) ---
+            initSankey(filters) {
+                const container = document.getElementById('chart-sankey');
+                if (!container) return;
+                d3.select('#chart-sankey').selectAll("*").remove();
+
+                const width = container.clientWidth, height = container.clientHeight;
+                const svg = d3.select('#chart-sankey').append('svg')
+                    .attr('width', '100%').attr('height', '100%').attr('viewBox', [0, 0, width, height]);
+
+                // Selezione flussi
+                let flows = DataModel.pairs.filter(p => p.from !== p.to);
+                if (filters.suspiciousOnly) {
+                    flows = flows.filter(p => DataModel.isPseudonym(p.from) || DataModel.isPseudonym(p.to));
+                }
+                flows = flows.sort((a, b) => b.value - a.value).slice(0, 28);
+
+                if (flows.length === 0) {
+                    svg.append("text").attr("x", width / 2).attr("y", height / 2)
+                        .attr("text-anchor", "middle").style("fill", "#94a3b8")
+                        .text("Nessun flusso per il filtro selezionato");
+                    return;
+                }
+
+                // Grafo bipartito: nodo mittente "S:x" a sinistra, destinatario "T:y" a destra (niente cicli)
+                const idx = {}; const nodes = [];
+                const nodeId = (side, name) => {
+                    const key = side + ':' + name;
+                    if (idx[key] === undefined) { idx[key] = nodes.length; nodes.push({ name, side, key }); }
+                    return idx[key];
+                };
+                const links = flows.map(f => ({
+                    source: nodeId('S', f.from), target: nodeId('T', f.to),
+                    value: f.value, from: f.from, to: f.to
+                }));
+
+                const sankey = d3.sankey().nodeWidth(18).nodePadding(14)
+                    .extent([[104, 12], [width - 104, height - 12]]);
+                const graph = sankey({ nodes: nodes.map(d => ({ ...d })), links: links.map(d => ({ ...d })) });
+
+                const isSus = name => DataModel.isPseudonym(name);
+
+                svg.append("g").selectAll(".sankey-link").data(graph.links).enter().append("path")
+                    .attr("class", "sankey-link").attr("d", d3.sankeyLinkHorizontal())
+                    .attr("stroke", d => (isSus(d.from) || isSus(d.to)) ? "#ef4444" : "#94a3b8")
+                    .attr("stroke-opacity", d => (filters.suspiciousOnly && !(isSus(d.from) || isSus(d.to))) ? 0.1 : 0.45)
+                    .attr("stroke-width", d => Math.max(1, d.width))
+                    .on("mouseover", (e, d) =>
+                        showTooltip(e, `<b>${d.from}</b> → <b>${d.to}</b><br>Messaggi: <b>${d.value}</b>`))
+                    .on("mouseout", hideTooltip);
+
+                const node = svg.append("g").selectAll(".sankey-node").data(graph.nodes).enter()
+                    .append("g").attr("class", "sankey-node");
+                node.append("rect")
+                    .attr("x", d => d.x0).attr("y", d => d.y0)
+                    .attr("height", d => Math.max(1, d.y1 - d.y0)).attr("width", d => d.x1 - d.x0)
+                    .attr("fill", d => isSus(d.name) ? "#ef4444" : D3Charts.entityColor(d.name))
+                    .on("mouseover", (e, d) =>
+                        showTooltip(e, `<b>${d.name}</b> (${d.side === 'S' ? 'mittente' : 'destinatario'})<br>Totale: ${d.value} msg`))
+                    .on("mouseout", hideTooltip);
+                node.append("text")
+                    .attr("x", d => d.side === 'S' ? d.x0 - 6 : d.x1 + 6)
+                    .attr("y", d => (d.y1 + d.y0) / 2).attr("dy", "0.35em")
+                    .attr("text-anchor", d => d.side === 'S' ? "end" : "start")
+                    .text(d => d.name.length > 17 ? d.name.slice(0, 16) + '…' : d.name).style("font-size", "10px")
+                    .style("font-weight", d => isSus(d.name) ? "700" : "500")
+                    .style("fill", d => isSus(d.name) ? "#b91c1c" : "#334155")
+                    .append("title").text(d => d.name);
+            },
+
+            // --- TAB 4: DOSSIER (ego-network della compromissione + timeline delle prove) ---
+            egoSelectCb: null,   // impostato da Vue: clic su un contatto → filtra la catena delle prove
+
+            initDossier(filters, contact, trendScope) {
+                const dos = DataModel.dossier(filters.egoTarget);
+                this.initEgoNetwork(filters, dos, contact);
+                this.initEvidenceTimeline(filters, dos, contact);
+                this.initCorruptionTimeline(filters, dos, contact, trendScope || 'target');
+            },
+
+            // Vicini del target: contatti radio (dal dossier) + relazioni dichiarate/dedotte
+            egoData(target, dos) {
+                const nodes = [{ id: target, type: 'target', msgs: 0, flagged: 0 }];
+                const links = [];
+                const seen = {};
+
+                Object.values(dos.contacts).forEach(c => {
+                    seen[c.id] = true;
+                    nodes.push({
+                        id: c.id, type: DataModel.isPseudonym(c.id) ? 'pseudonym' : (c.flagged ? 'compromised' : 'neutral'),
+                        msgs: c.msgs, flagged: c.flagged
+                    });
+                    links.push({ source: target, target: c.id, inferred: false, comm: c.msgs, type: 'communication' });
+                });
+
+                // Relazioni senza traffico radio: legami dedotti (tratteggiati)
+                DataModel.relationshipsOf(target).forEach(r => {
+                    if (r.other === target || seen[r.other]) return;
+                    seen[r.other] = true;
+                    nodes.push({
+                        id: r.other, type: DataModel.isPseudonym(r.other) ? 'pseudonym' : 'related',
+                        msgs: 0, flagged: 0, rel: r.types.join(', ')
+                    });
+                    links.push({ source: target, target: r.other, inferred: true, comm: 0, type: r.types.join(', ') });
+                });
+
+                return { nodes, links };
+            },
+
+            egoColor(d) {
+                if (d.type === 'target') return '#3b82f6';
+                if (d.type === 'pseudonym') return '#b91c1c';
+                if (d.type === 'compromised') return '#d55e00';
+                if (d.type === 'related') return '#94a3b8';
+                return '#64748b';
+            },
+
+            initEgoNetwork(filters, dos, contact) {
+                const container = document.getElementById('chart-ego');
+                if (!container) return;
+                d3.select('#chart-ego').selectAll("*").remove();
+
+                const width = container.clientWidth, height = container.clientHeight;
+                const svg = d3.select('#chart-ego').append('svg')
+                    .attr('width', '100%').attr('height', '100%').attr('viewBox', [0, 0, width, height]);
+
+                const { nodes: egoNodes, links: egoLinks } = this.egoData(filters.egoTarget, dos);
+                const maxMsgs = d3.max(egoNodes, n => n.msgs) || 1;
+                const r = d3.scaleSqrt().domain([0, maxMsgs]).range([6, 15]);   // area ∝ n. messaggi
+                const radius = d => d.type === 'target' ? 18 : r(d.msgs);
+
+                // Etichette accorciate: servono per calcolare l'ingombro e tenere i nodi dentro il riquadro
+                const FS = 10;
+                const label = d => d.id.length > 14 ? d.id.slice(0, 13) + '…' : d.id;
+                egoNodes.forEach(d => { d.half = label(d).length * FS * 0.29 + 2; });  // semi-larghezza stimata del testo
+
+                const simulation = d3.forceSimulation(egoNodes)
+                    .force('link', d3.forceLink(egoLinks).id(d => d.id).distance(d => d.inferred ? 100 : 88))
+                    .force('charge', d3.forceManyBody().strength(-300))
+                    .force('center', d3.forceCenter(width / 2, height / 2))
+                    .force('collide', d3.forceCollide().radius(d => Math.max(radius(d) + 14, d.half + 6)));
+
+                // Nessun nodo (né la sua etichetta) può uscire dal riquadro
+                const clamp = d => {
+                    const pad = Math.max(radius(d) + 2, d.half);
+                    d.x = Math.max(pad, Math.min(width - pad, d.x));
+                    d.y = Math.max(radius(d) + 6, Math.min(height - radius(d) - FS - 6, d.y));
+                };
+
+                // Layout risolto in modo sincrono (niente ballonzolamento iniziale e nessun nodo fuori campo).
+                // Il drag rimette in moto la simulazione, che continua a passare dal clamp nel tick.
+                for (let i = 0; i < 300; i++) { simulation.tick(); egoNodes.forEach(clamp); }
+                simulation.stop();
+
+                const link = svg.append('g').selectAll('line').data(egoLinks).enter().append('line')
+                    .attr('class', d => d.inferred ? 'ego-link inferred' : 'ego-link')
+                    .attr('stroke-width', d => d.comm ? Math.min(6, 1 + Math.sqrt(d.comm)) : 1.5)
+                    .style('opacity', d => (d.inferred && !filters.showInferred) ? 0 : 1);
+
+                const nodeGroup = svg.append('g').selectAll('g').data(egoNodes).enter().append('g')
+                    .attr('class', 'ego-node-group')
+                    .style('cursor', d => d.type === 'target' ? 'default' : 'pointer')
+                    .on('click', (e, d) => { if (d.type !== 'target' && this.egoSelectCb) this.egoSelectCb(d.id); })
+                    .call(d3.drag()
+                        .on("start", (e, d) => { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+                        .on("drag", (e, d) => {
+                            const pad = Math.max(radius(d) + 2, d.half);
+                            d.fx = Math.max(pad, Math.min(width - pad, e.x));
+                            d.fy = Math.max(radius(d) + 6, Math.min(height - radius(d) - FS - 6, e.y));
+                        })
+                        .on("end", (e, d) => { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+                nodeGroup.append('circle').attr('class', 'ego-node')
+                    .attr('r', radius)
+                    .attr('fill', d => this.egoColor(d))
+                    .attr('stroke', d => (contact && d.id === contact) ? '#0f172a' : '#fff')
+                    .attr('stroke-width', d => (contact && d.id === contact) ? 3 : 2)
+                    .on("mouseover", (e, d) => {
+                        if (d.type === 'target') return showTooltip(e, `<b>${d.id}</b><br>target dell'indagine`);
+                        const det = d.msgs
+                            ? `${d.msgs} messaggi · <b style="color:#d55e00">${d.flagged} incriminanti</b>`
+                            : `nessun messaggio radio<br>relazione dedotta: ${d.rel}`;
+                        showTooltip(e, `<b>${d.id}</b><br>${det}<br><i style="color:#94a3b8">clic: filtra le prove</i>`);
+                    })
+                    .on("mouseout", hideTooltip);
+
+                // Anello rosso sui contatti con almeno un messaggio incriminante
+                nodeGroup.filter(d => d.flagged > 0).append('circle')
+                    .attr('r', d => radius(d) + 4)
+                    .attr('fill', 'none').attr('stroke', '#b91c1c').attr('stroke-width', 1.5).attr('stroke-opacity', 0.7);
+
+                nodeGroup.append('text').attr('dy', d => radius(d) + 11).attr('text-anchor', 'middle')
+                    .text(label)
+                    .style('font-size', FS + 'px').style('pointer-events', 'none')
+                    .style('font-weight', d => (d.type === 'target' || d.type === 'pseudonym') ? '700' : '400')
+                    .style('fill', d => d.type === 'pseudonym' ? '#b91c1c' : '#334155')
+                    .append('title').text(d => d.id);   // nome completo se troncato
+
+                const ticked = () => {
+                    egoNodes.forEach(clamp);
+                    link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+                        .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+                    nodeGroup.attr('transform', d => `translate(${d.x},${d.y})`);
+                };
+                simulation.on('tick', ticked);
+                ticked();   // disegna subito il layout già risolto
+            },
+
+            // Timeline: un cerchio per messaggio, impilati per giorno.
+            // Pieno = messaggio incriminante (colore = capo d'accusa); vuoto = comunicazione ordinaria.
+            initEvidenceTimeline(filters, dos, contact) {
+                const container = document.getElementById('chart-events');
+                if (!container) return;
+                d3.select('#chart-events').selectAll("*").remove();
+
+                const dates = DataModel.dateDomain();
+
+                // Se i giorni stanno stretti, le date si scrivono in obliquo (e serve più spazio sotto)
+                const slotW = (container.clientWidth - 40) / Math.max(1, dates.length);
+                const tilt = slotW < 34;
+                const margin = { top: 10, right: 20, bottom: tilt ? 42 : 26, left: 20 };
+                const width = container.clientWidth - margin.left - margin.right;
+                const height = container.clientHeight - margin.top - margin.bottom;
+                if (width <= 0 || height <= 0) return;
+
+                const svg = d3.select("#chart-events").append("svg")
+                    .attr("width", '100%').attr("height", '100%')
+                    .append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+                const x = d3.scalePoint().domain(dates).range([0, width]).padding(0.5);
+
+                // Impilamento per giorno
+                const perDay = {};
+                const pts = dos.msgs
+                    .filter(m => dates.includes(m.date))
+                    .filter(m => filters.showIndirect || m.dir !== 'about')   // indiretti ("parlano di lei") solo su richiesta
+                    .map(m => {
+                        const k = (perDay[m.date] = (perDay[m.date] || 0) + 1) - 1;
+                        return { ...m, col: m.date, row: k };
+                    });
+                const maxRow = d3.max(pts, p => p.row) || 0;
+                const rad = Math.max(3, Math.min(6, (slotW - 2) / 2));
+                const base = height - rad - 2;                                   // riga più bassa
+                // La pila più alta deve restare dentro il riquadro
+                const step = maxRow ? Math.min(18, (base - rad) / maxRow) : 0;
+
+                // Asse dei giorni (in obliquo quando i giorni sono troppo vicini)
+                svg.append('g').attr('transform', `translate(0,${height})`)
+                    .call(d3.axisBottom(x).tickFormat(d => d.slice(8, 10) + '/10'))
+                    .call(g => g.select('.domain').attr('stroke', '#e2e8f0'))
+                    .selectAll('text').style('font-size', '9px').style('fill', '#94a3b8')
+                    .attr('transform', tilt ? 'translate(-8,4) rotate(-45)' : null)
+                    .style('text-anchor', tilt ? 'end' : 'middle');
+
+                const dim = p => contact && p.from !== contact && p.to !== contact;
+
+                svg.append('g').selectAll('circle').data(pts).enter().append('circle')
+                    .attr('cx', p => x(p.col))
+                    .attr('cy', p => base - p.row * step)
+                    .attr('r', rad)
+                    .attr('fill', p => p.tags.length ? DataModel.accusaById(p.tags[0]).color : '#fff')
+                    .attr('stroke', p => p.dir === 'about' ? '#b45309' : (p.tags.length ? DataModel.accusaById(p.tags[0]).color : '#94a3b8'))
+                    .attr('stroke-width', p => p.dir === 'about' ? 2 : 1.5)
+                    .attr('stroke-dasharray', p => p.uncertain ? '2,1.5' : null)   // attribuzione incerta
+                    .style('opacity', p => dim(p) ? 0.15 : 1)
+                    .style('cursor', 'pointer')
+                    .on('mouseover', (e, p) => showTooltip(e,
+                        `<b>${p.from} → ${p.to}</b><br><span style="color:#94a3b8">${p.ts}</span><br>` +
+                        (p.dir === 'about' ? `<span style="color:#b45309">◆ messaggio indiretto (parlano di lei)</span><br>` : '') +
+                        (p.corrected ? `<span style="color:#0369a1">✓ rettificato dal testo (radio: ${p.radioFrom} → ${p.radioTo})</span><br>` : '') +
+                        (p.uncertain ? `<span style="color:#b45309">⚠ attribuzione incerta (radio: ${p.radioFrom} → ${p.radioTo})</span><br>` : '') +
+                        (p.tags.length
+                            ? p.tags.map(t => `<span style="color:${DataModel.accusaById(t).color}">● ${DataModel.accusaById(t).label}</span>`).join('<br>')
+                            : '<span style="color:#94a3b8">nessun elemento incriminante</span>')))
+                    .on('mouseout', hideTooltip)
+                    .on('click', (e, p) => {
+                        const el = document.getElementById('ev-' + p.id);
+                        if (el) {
+                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            el.classList.add('ring-2', 'ring-blue-400');
+                            setTimeout(() => el.classList.remove('ring-2', 'ring-blue-400'), 1600);
+                        }
+                    });
+            },
+
+            // Timeline degli "eventi di corruzione": una LINEA per ogni categoria (DataModel.CORRUPTION_EVENTS),
+            // conteggio GIORNALIERO (non cumulato) dei messaggi che contengono le keyword di quella categoria.
+            // Scope: 'target' = catena del dossier (rispetta contatto + toggle indiretti) · 'all' = tutte le 584
+            // comunicazioni. Un messaggio può contribuire a più categorie. Palette e legenda da CORRUPTION_EVENTS.
+            initCorruptionTimeline(filters, dos, contact, scope) {
+                const container = document.getElementById('chart-trend');
+                if (!container) return;
+                d3.select('#chart-trend').selectAll('*').remove();
+                const legendEl = document.getElementById('trend-legend');
+                if (legendEl) legendEl.innerHTML = '';
+
+                const dates = DataModel.dateDomain();
+
+                // Insieme di messaggi secondo lo scope
+                let msgs;
+                if (scope === 'all') {
+                    msgs = DataModel.communications.filter(c => c.date && dates.includes(c.date));
+                } else {
+                    msgs = dos.msgs
+                        .filter(m => dates.includes(m.date))
+                        .filter(m => filters.showIndirect || m.dir !== 'about');
+                    if (contact) msgs = msgs.filter(m => m.from === contact || m.to === contact);
+                }
+
+                const cats = DataModel.CORRUPTION_EVENTS;
+                const emptyMsg = scope === 'all'
+                    ? 'Nessuna comunicazione.'
+                    : (contact ? `Nessun messaggio negli scambi con ${contact}.` : 'Nessun messaggio nella catena.');
+                if (!msgs.length) {
+                    d3.select('#chart-trend').append('div')
+                        .attr('class', 'w-full h-full flex items-center justify-center text-slate-400 text-sm px-4 text-center')
+                        .text(emptyMsg);
+                    return;
+                }
+
+                // Conteggio giornaliero per categoria (un messaggio conta 1 per ogni categoria che aggancia)
+                const re = {}; cats.forEach(c => re[c.id] = new RegExp(c.src, 'i'));
+                const dayCount = {}; dates.forEach(d => { dayCount[d] = {}; cats.forEach(c => dayCount[d][c.id] = 0); });
+                const total = {}; cats.forEach(c => total[c.id] = 0);
+                msgs.forEach(m => {
+                    const txt = m.content || '';
+                    cats.forEach(c => { if (re[c.id].test(txt)) { dayCount[m.date][c.id]++; total[c.id]++; } });
+                });
+
+                // Solo le categorie presenti, ordinate per volume (linee più rilevanti disegnate per ultime, sopra)
+                const active = cats.filter(c => total[c.id] > 0).sort((a, b) => total[a.id] - total[b.id]);
+                if (!active.length) {
+                    d3.select('#chart-trend').append('div')
+                        .attr('class', 'w-full h-full flex items-center justify-center text-slate-400 text-sm px-4 text-center')
+                        .text('Nessun evento di corruzione rilevato in questo insieme.');
+                    return;
+                }
+                const rows = dates.map(d => ({ date: d, ...dayCount[d] }));
+
+                // Legenda HTML sotto il grafico, popolata PRIMA di misurare il chart: così #chart-trend ha
+                // già la sua altezza definitiva (legenda inclusa) e l'asse X in basso non viene tagliato via.
+                if (legendEl) {
+                    active.slice().sort((a, b) => total[b.id] - total[a.id]).forEach(c => {
+                        const item = document.createElement('span');
+                        item.className = 'inline-flex items-center gap-1.5 whitespace-nowrap';
+                        item.title = `${c.label} · ${total[c.id]} messaggi`;
+                        item.innerHTML = `<span style="display:inline-block;width:14px;height:2.5px;border-radius:2px;background:${c.color}"></span>` +
+                            `<span style="color:#475569">${c.label}</span>`;
+                        legendEl.appendChild(item);
+                    });
+                }
+
+                // Misura DOPO aver riempito la legenda (leggere clientHeight forza il reflow → altezza reale)
+                const cW = container.clientWidth, cH = container.clientHeight;
+                if (cW < 10 || cH < 10) return;
+
+                const margin = { top: 10, right: 12, bottom: 28, left: 26 };
+                const width = cW - margin.left - margin.right;
+                const height = cH - margin.top - margin.bottom;
+                if (width <= 0 || height <= 0) return;
+
+                const svg = d3.select('#chart-trend').append('svg')
+                    .attr('width', '100%').attr('height', '100%')
+                    .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+                const slotW = width / Math.max(1, dates.length);
+                const tilt = slotW < 24;
+                const x = d3.scalePoint().domain(dates).range([0, width]).padding(0.5);
+                const yMax = d3.max(active, c => d3.max(dates, d => dayCount[d][c.id])) || 1;
+                const y = d3.scaleLinear().domain([0, yMax]).nice().range([height, 0]);
+
+                // Assi
+                svg.append('g').attr('transform', `translate(0,${height})`)
+                    .call(d3.axisBottom(x).tickFormat(d => d.slice(8, 10) + '/' + d.slice(5, 7)))
+                    .call(g => g.select('.domain').attr('stroke', '#e2e8f0'))
+                    .selectAll('text').style('font-size', '8px').style('fill', '#94a3b8')
+                    .attr('transform', tilt ? 'translate(-6,3) rotate(-45)' : null)
+                    .style('text-anchor', tilt ? 'end' : 'middle');
+                svg.append('g')
+                    .call(d3.axisLeft(y).ticks(Math.min(yMax, 5)).tickFormat(d3.format('d')))
+                    .call(g => g.select('.domain').remove())
+                    .call(g => g.selectAll('.tick line').attr('stroke', '#f1f5f9').attr('x2', width))
+                    .selectAll('text').style('font-size', '8px').style('fill', '#94a3b8');
+
+                // Una linea per categoria (conteggio giornaliero) + pallini nei giorni con eventi
+                active.forEach(c => {
+                    const lineGen = d3.line().x(d => x(d.date)).y(d => y(d[c.id])).curve(d3.curveMonotoneX);
+                    svg.append('path').datum(rows)
+                        .attr('fill', 'none').attr('stroke', c.color).attr('stroke-width', 2)
+                        .attr('stroke-linejoin', 'round').attr('stroke-linecap', 'round')
+                        .attr('d', lineGen);
+                    svg.append('g').selectAll('circle').data(rows.filter(r => r[c.id] > 0)).enter().append('circle')
+                        .attr('cx', d => x(d.date)).attr('cy', d => y(d[c.id])).attr('r', 2.6)
+                        .attr('fill', c.color).attr('stroke', '#fff').attr('stroke-width', 1)
+                        .style('cursor', 'pointer')
+                        .on('mouseover', (e, d) => showTooltip(e,
+                            `<b style="color:${c.color}">${c.label}</b><br>${d.date.slice(8, 10)}/${d.date.slice(5, 7)} · ${d[c.id]} messaggi`))
+                        .on('mouseout', hideTooltip);
+                });
+            }
+        };
+
+        // ==========================================
+        // 2. MOTORE VUE.JS (Stato e Navigazione Tab)
+        // ==========================================
+        const { createApp, ref, computed, watch, onMounted, nextTick } = Vue;
+
+        createApp({
+            setup() {
+                const activeTab = ref(1);
+                const tabs = [
+                    { id: 1, name: 'Task 1: Pattern Temporali', icon: 'fa-chart-column' },
+                    { id: 2, name: 'Task 2: Fazioni', icon: 'fa-circle-nodes' },
+                    { id: 3, name: 'Task 3: Pseudonimi', icon: 'fa-water' },
+                    { id: 4, name: 'Task 4: Dossier', icon: 'fa-folder-open' }
+                ];
+
+                const filters = ref({
+                    isAggregated: false,   // Tab 1
+                    selectedUsers: [],     // Tab 1 — filtro utenti
+                    selectedTopic: null,   // Tab 1 — evidenzia topic
+                    suspiciousOnly: false, // Tab 2, 3, 4
+                    showInferred: true,    // Tab 4
+                    showIndirect: false,   // Tab 4 — timeline/trend: include i messaggi "parlano di lei"
+                    egoTarget: 'Nadia Conti' // Tab 4
+                });
+
+                const participants = ref([]);
+                const topics = ref([]);
+                const commGroups = ref([]);
+                const commSelectedGroup = ref(null);
+                const commView = ref('groups');       // 'groups' | 'explore'
+                const netSelected = ref(null);
+                const setCommView = (v) => { commView.value = v; nextTick(() => drawChartForTab(2)); };
+                const netNameOf = (id) => (DataModel.nodeById[id] || {}).name || id;
+                const clearNetSelection = () => { netSelected.value = null; D3Charts.renderNetworkExplore(null); };
+
+                // Pannello messaggi: drill-down + ricerca + "about"
+                // Tab 3 — entity resolution
+                const simView = ref('similarity');   // 'similarity' | 'radiotext'
+                const setSimView = (v) => { simView.value = v; nextTick(() => drawChartForTab(3)); };
+                const radioTextRows = computed(() => DataModel.textResolution().filter(r => r.mismatch)
+                    .sort((a, b) => (a.radioFrom || '').localeCompare(b.radioFrom || '')));
+                const deanonData = computed(() => DataModel.deanonymization());
+
+                // Tab 2 — clic su un topic → lista di tutti i messaggi di quel topic (rete completa)
+                const topicSelectedT2 = ref(null);
+                const selectTopicT2 = (label) => {
+                    const t = DataModel.topics.find(x => x.label === label);
+                    topicSelectedT2.value = t ? t.id : null;
+                };
+                const topicLabelT2 = computed(() => {
+                    const t = DataModel.topics.find(x => x.id === topicSelectedT2.value);
+                    return t ? t.label : '';
+                });
+                const topicMessagesT2 = computed(() => {
+                    if (topicSelectedT2.value === null) return [];
+                    return DataModel.communications
+                        .filter(m => m.topic === topicSelectedT2.value)
+                        .slice().sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+                });
+
+                // Tab 2 — eventi di corruzione per gruppo (stessa tassonomia della Tab 4):
+                // conta i messaggi INVIATI dai membri del gruppo che agganciano ogni categoria.
+                // Clic su una barra → elenco dei messaggi del gruppo con le keyword evidenziate.
+                const eventSelectedT2 = ref(null);   // { catId, groupId } | null
+                const selectEventT2 = (catId, groupId) => { eventSelectedT2.value = { catId, groupId }; };
+                const groupEvents = computed(() => {
+                    const map = {};
+                    commGroups.value.forEach(g => {
+                        const members = new Set(g.members);
+                        const counts = {};
+                        DataModel.communications.forEach(c => {
+                            if (!members.has(c.from)) return;
+                            DataModel.corruptionEventsOf(c.content).forEach(e => counts[e] = (counts[e] || 0) + 1);
+                        });
+                        map[g.id] = DataModel.CORRUPTION_EVENTS
+                            .map(ce => ({ id: ce.id, label: ce.label, color: ce.color, count: counts[ce.id] || 0 }))
+                            .filter(x => x.count > 0)
+                            .sort((a, b) => b.count - a.count);
+                    });
+                    return map;
+                });
+                const eventCatT2 = computed(() => eventSelectedT2.value ? DataModel.corruptionEventById(eventSelectedT2.value.catId) : null);
+                const eventGroupLabelT2 = computed(() => {
+                    if (!eventSelectedT2.value) return '';
+                    const g = commGroups.value.find(x => x.id === eventSelectedT2.value.groupId);
+                    return g ? g.label : '';
+                });
+                const eventMessagesT2 = computed(() => {
+                    if (!eventSelectedT2.value) return [];
+                    const g = commGroups.value.find(x => x.id === eventSelectedT2.value.groupId);
+                    const members = new Set(g ? g.members : []);
+                    const re = new RegExp(DataModel.corruptionEventById(eventSelectedT2.value.catId).src, 'i');
+                    return DataModel.communications
+                        .filter(c => members.has(c.from) && re.test(c.content || ''))
+                        .slice().sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+                });
+                // Testo con le keyword dell'evento evidenziate (stessa filosofia del dossier: citazione verificabile)
+                const eventHtmlT2 = (m) => {
+                    let t = escapeHtml(m.content);
+                    if (eventSelectedT2.value) {
+                        const re = new RegExp('(' + DataModel.corruptionEventById(eventSelectedT2.value.catId).src + ')', 'gi');
+                        t = t.replace(re, '<mark style="background:#fde68a;font-weight:600">$1</mark>');
+                    }
+                    return t;
+                };
+
+                const msgSearch = ref('');
+                const msgMode = ref('with');   // 'with' | 'about' | 'all'
+                const entityTypeOf = (name) => (DataModel.nodeById[name] || {}).sub_type || '?';
+                const topicLabelOf = (id) => DataModel.topicLabel(id);
+                const messageList = computed(() => {
+                    const sel = netSelected.value, q = msgSearch.value.trim().toLowerCase();
+                    if (!sel && !q) return [];
+                    let msgs = DataModel.communications;
+                    if (sel) {
+                        if (msgMode.value === 'with') msgs = msgs.filter(m => m.from === sel || m.to === sel);
+                        else if (msgMode.value === 'about') msgs = msgs.filter(m => m.mentions.includes(sel));
+                        else msgs = msgs.filter(m => m.from === sel || m.to === sel || m.mentions.includes(sel));
+                    }
+                    if (q) msgs = msgs.filter(m => (m.content || '').toLowerCase().includes(q));
+                    return msgs.slice(0, 300);
+                });
+                const escapeHtml = (s) => (s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+                const highlightText = (text) => {
+                    const t = escapeHtml(text);
+                    const q = msgSearch.value.trim();
+                    if (!q) return t;
+                    const re = new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+                    return t.replace(re, '<mark style="background:#fef08a">$1</mark>');
+                };
+                const netShapePath = (kind) => d3.symbol().type(kind === 'star' ? d3.symbolStar : d3.symbolCircle).size(58)();
+                const groupColorOf = (id) => D3Charts.groupColor(id);
+                const symbolPath = (type) => d3.symbol().type((D3Charts.TYPE_STYLE[type] || {}).sym || d3.symbolCircle).size(58)();
+                const selectGroup = (id) => {
+                    commSelectedGroup.value = (id !== null && commSelectedGroup.value === id) ? null : id;
+                    D3Charts.highlightCommGroup(commSelectedGroup.value);
+                };
+                // --- Tab 1 — "chi influenza chi" (precedenza temporale)
+                const influenceTarget = ref(null);
+                const influenceDelta = ref(60);
+                const influenceOpen = ref(null);
+                const influenceData = computed(() => DataModel.influence(influenceTarget.value, influenceDelta.value));
+                const highlightMsgId = ref(null);
+                const highlightOnMap = (id) => {
+                    highlightMsgId.value = (highlightMsgId.value === id) ? null : id;
+                    D3Charts.highlightId = highlightMsgId.value;
+                    D3Charts.renderHeatmap(filters.value);
+                };
+                watch(influenceTarget, (v) => {
+                    influenceOpen.value = null;
+                    highlightMsgId.value = null; D3Charts.highlightId = null;
+                    D3Charts.influenceTarget = v || null;   // la mappa tiene solo i messaggi del target
+                    if (activeTab.value === 1) nextTick(() => drawChartForTab(1));
+                });
+                const shortTime = (ts) => (ts || '').slice(11, 16);
+                const shortText = (s) => { s = s || ''; return s.length > 90 ? s.slice(0, 90) + '…' : s; };
+
+                const usersOpen = ref(false);
+                const topicOpen = ref(false);
+                const topicById = (id) => topics.value.find(t => t.id === id) || { label: '' };
+                const selectTopic = (id) => { filters.value.selectedTopic = id; topicOpen.value = false; };
+                const typeStyles = D3Charts.TYPE_STYLE;
+                const typeColorOf = (type) => (D3Charts.TYPE_STYLE[type] || {}).color || '#94a3b8';
+                const isUserSelected = (id) => filters.value.selectedUsers.includes(id);
+                const toggleUser = (id) => {
+                    const sel = filters.value.selectedUsers;
+                    const i = sel.indexOf(id);
+                    if (i === -1) sel.push(id); else sel.splice(i, 1);
+                };
+                const toggleTopic = (id) => {
+                    filters.value.selectedTopic = (filters.value.selectedTopic === id) ? null : id;
+                };
+
+                // --- Tab 4 — dossier: filtri per capo d'accusa e per contatto
+                const accuse = DataModel.ACCUSE;
+                const accusaById = (id) => DataModel.accusaById(id);
+                const corruptionEventById = (id) => DataModel.corruptionEventById(id);
+                const dossierAccusa = ref(null);
+                const dossierContact = ref(null);
+                const trendScope = ref('target');   // 'target' | 'all' — scope della timeline eventi di corruzione
+                const setTrendScope = (v) => { trendScope.value = v; nextTick(() => drawChartForTab(4)); };
+                const dossierData = computed(() => DataModel.dossier(filters.value.egoTarget));
+                const dossierList = computed(() => dossierData.value.msgs.filter(m =>
+                    (!dossierAccusa.value || m.tags.includes(dossierAccusa.value)) &&
+                    (!dossierContact.value || m.from === dossierContact.value || m.to === dossierContact.value)
+                ));
+                const toggleAccusa = (id) => {
+                    dossierAccusa.value = (dossierAccusa.value === id) ? null : id;
+                };
+                const clearDossierFilters = () => {
+                    dossierAccusa.value = null; dossierContact.value = null;
+                    nextTick(() => drawChartForTab(4));
+                };
+                // Testo del messaggio con le frasi che fanno scattare l'accusa evidenziate
+                const dossierHtml = (m) => {
+                    let t = escapeHtml(m.content);
+                    [...m.hits].sort((a, b) => b.length - a.length).forEach(h => {
+                        const re = new RegExp('(' + h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+                        t = t.replace(re, '<mark style="background:#fecaca;font-weight:600">$1</mark>');
+                    });
+                    return t;
+                };
+
+                const drawChartForTab = (tabId) => {
+                    if (tabId === 1) D3Charts.renderHeatmap(filters.value);
+                    if (tabId === 2) {
+                        if (commView.value === 'explore') D3Charts.renderNetworkExplore(netSelected.value);
+                        else D3Charts.initCommunity(filters.value);
+                    }
+                    if (tabId === 3) {
+                        if (simView.value === 'similarity') D3Charts.renderSimHeatmap();
+                        else if (simView.value === 'radiotext') D3Charts.renderRadioHeatmaps();
+                        // 'deanon' è HTML reattivo (nessun chart D3)
+                        D3Charts.initSankey(filters.value);
+                    }
+                    if (tabId === 4) D3Charts.initDossier(filters.value, dossierContact.value, trendScope.value);
+                };
+
+                const changeTab = (id) => {
+                    activeTab.value = id;
+                    hideTooltip();
+                    nextTick(() => { drawChartForTab(id); });
+                };
+
+                const toggleAggregation = () => { filters.value.isAggregated = !filters.value.isAggregated; };
+
+                // Cambio target → il dossier riparte pulito
+                watch(() => filters.value.egoTarget, () => {
+                    dossierAccusa.value = null; dossierContact.value = null;
+                });
+
+                // Ridisegna sempre il tab corrente quando cambia un filtro
+                watch(filters, () => {
+                    nextTick(() => { drawChartForTab(activeTab.value); });
+                }, { deep: true });
+
+                onMounted(() => {
+                    DataModel.init();
+                    participants.value = DataModel.participants;
+                    topics.value = DataModel.topics;
+                    commGroups.value = DataModel.commGroups;
+                    D3Charts.netSelectCb = (id) => {
+                        netSelected.value = (id !== null && netSelected.value === id) ? null : id;
+                        D3Charts.renderNetworkExplore(netSelected.value);
+                    };
+                    // Clic su un contatto dell'ego-network → filtra la catena delle prove
+                    D3Charts.egoSelectCb = (id) => {
+                        dossierContact.value = (dossierContact.value === id) ? null : id;
+                        nextTick(() => drawChartForTab(4));
+                    };
+                    nextTick(() => { drawChartForTab(1); });
+                    // Ridisegna al resize della finestra
+                    window.addEventListener('resize', () => drawChartForTab(activeTab.value));
+                });
+
+                return { activeTab, tabs, filters, changeTab, toggleAggregation,
+                         participants, typeColorOf, typeStyles, isUserSelected, toggleUser,
+                         topics, toggleTopic, topicOpen, topicById, selectTopic, usersOpen,
+                         influenceTarget, influenceDelta, influenceOpen, influenceData, shortTime, shortText,
+                         highlightMsgId, highlightOnMap,
+                         commGroups, commSelectedGroup, selectGroup, groupColorOf, symbolPath,
+                         topicSelectedT2, selectTopicT2, topicLabelT2, topicMessagesT2,
+                         eventSelectedT2, selectEventT2, groupEvents, eventCatT2, eventGroupLabelT2, eventMessagesT2, eventHtmlT2,
+                         commView, setCommView, netSelected, netNameOf, clearNetSelection, netShapePath,
+                         msgSearch, msgMode, messageList, highlightText, entityTypeOf, topicLabelOf,
+                         simView, setSimView, radioTextRows, deanonData,
+                         accuse, accusaById, corruptionEventById, dossierData, dossierList, dossierAccusa, dossierContact,
+                         trendScope, setTrendScope,
+                         toggleAccusa, clearDossierFilters, dossierHtml };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
